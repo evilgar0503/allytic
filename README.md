@@ -115,9 +115,10 @@ Coming in phase 4: verified-fix rate, regression rate, latency, tokens and cost 
 
 ## Security
 
-- URL audits are guarded against SSRF in two layers (request validation in the Worker and
-  per-request interception in the remote browser). The residual DNS-rebinding risk is documented
-  rather than hidden.
+- URL audits are guarded against SSRF in two layers: the URL and its DNS records are validated,
+  and every request the page makes in the remote browser (redirect hops and subresources
+  included) is paused and validated before it is sent. The residual DNS-rebinding risk is
+  documented and covered by a test that states it, rather than hidden.
 - Audited HTML is treated as untrusted data in prompts; model output is schema-validated and a
   patch only counts if axe verifies it.
 - Bring-your-own-key stays in the browser and is never sent to the Allytic backend.

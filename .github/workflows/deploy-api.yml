@@ -1,0 +1,109 @@
+name: Deploy API
+
+# Manual for now: the API is still the phase 3b spike. It will also run on pushes to main
+# once the real endpoints exist.
+on:
+  workflow_dispatch:
+    inputs:
+      spike:
+        description: Run the CPU-time spike after deploying
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-api
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Cloudflare Workers
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/wrangler-output.ndjson
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The Worker bundles the compiled workspace packages it depends on.
+      - run: pnpm --filter "@allytic/api^..." build
+
+      - name: Deploy
+        working-directory: apps/api
+        run: pnpm exec wrangler deploy
+
+      - name: Find the deployed URL
+        id: url
+        run: |
+          url=$(node -e '
+            const lines = require("node:fs").readFileSync(process.env.WRANGLER_OUTPUT_FILE_PATH, "utf8").split("\n").filter(Boolean);
+            const deploy = lines.map((line) => JSON.parse(line)).find((entry) => entry.type === "deploy");
+            const target = deploy?.targets?.find((entry) => entry.includes("workers.dev"));
+            if (!target) { console.error("No workers.dev URL in wrangler output. Is the workers.dev subdomain set up?"); process.exit(1); }
+            console.log(target.startsWith("http") ? target : `https://${target}`);
+          ')
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Deployed to $url" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke test
+        run: |
+          curl --fail --silent --show-error --retry 10 --retry-all-errors --retry-delay 5 \
+            "${{ steps.url.outputs.url }}/health"
+
+      # The spike endpoint only exists while SPIKE_TOKEN is set. The token is random, lives
+      # for the duration of this job and is deleted afterwards, even if a step fails.
+      - name: Enable the spike endpoint
+        if: inputs.spike
+        working-directory: apps/api
+        run: |
+          token=$(openssl rand -hex 24)
+          echo "::add-mask::$token"
+          echo "SPIKE_TOKEN=$token" >> "$GITHUB_ENV"
+          printf '%s' "$token" | pnpm exec wrangler secret put SPIKE_TOKEN
+
+      - name: Run the spike
+        if: inputs.spike
+        run: |
+          sleep 15
+          # guard off / guard on / with 4 and 12 patch-verification cycles, twice each.
+          for round in 1 2; do
+            for variant in "guard=0&verify=0" "guard=1&verify=0" "guard=1&verify=4" "guard=1&verify=12"; do
+              response=$(curl --silent --max-time 120 --write-out '\n%{http_code}' --request POST \
+                --header "authorization: Bearer $SPIKE_TOKEN" \
+                "${{ steps.url.outputs.url }}/spike?$variant" || true)
+              code=$(printf '%s' "$response" | tail -n 1)
+              body=$(printf '%s' "$response" | sed '$d' | tr -d '\n' | cut -c 1-700)
+              echo "| $round | $variant | $code | \`$body\` |" >> "$RUNNER_TEMP/spike.md"
+              if [ "$round" = "1" ]; then echo "::notice title=spike $variant::HTTP $code $body"; fi
+              # Free plan: one new browser every 20 seconds.
+              sleep 22
+            done
+          done
+          {
+            echo "### Spike results"
+            echo "| Round | Variant | HTTP | Body |"
+            echo "| --- | --- | --- | --- |"
+            cat "$RUNNER_TEMP/spike.md"
+            echo
+            echo "CPU time per invocation is in the Cloudflare dashboard: Workers & Pages → allytic-api → Observability."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Disable the spike endpoint
+        if: always() && inputs.spike
+        working-directory: apps/api
+        run: pnpm exec wrangler secret delete SPIKE_TOKEN

@@ -20,3 +20,6 @@ test-results/
 
 # Local LLM response cache of the CLI
 .allytic/
+
+# Local tooling of the coding assistant
+.claude/

@@ -3,9 +3,10 @@
 > Fuente de verdad del proyecto. Se actualiza en el mismo commit que cualquier cambio de
 > funcionalidad, arquitectura, stack, alcance, límites o decisiones (ver `CLAUDE.md`).
 >
-> Estado: **fase 3 completada** (la CLI audita, y con `--fix` pide a un LLM explicación y parche
-> para cada problema y verifica el parche reejecutando axe en la página). Sitio de ejemplo en
-> <https://allytic-broken-site.pages.dev>.
+> Estado: **fase 3b en curso**. Hecho: anti-SSRF con tests, guard de peticiones en el navegador
+> y spike de CPU listo para desplegar. Pendiente del resultado del spike: el resto de la API
+> (Turnstile, rate limit, Workers AI, caché KV, presupuesto). La CLI está completa (fase 3).
+> Sitio de ejemplo en <https://allytic-broken-site.pages.dev>.
 > Última revisión: 2026-10-07.
 
 ## 1. Visión y problema
@@ -333,6 +334,66 @@ Monorepo pnpm con TypeScript estricto:
 - **Consecuencias.** La verificación no se cachea: se repite siempre contra la página real.
   Repetir una auditoría sin cambios cuesta cero llamadas (`--no-cache` lo desactiva).
 
+### ADR-015 · Anti-SSRF implementado: validación de URL, DNS y guard en el navegador
+
+- **Contexto.** Concreta el ADR-003 ahora que el código existe (`apps/api/src/ssrf` y
+  `apps/api/src/browser/guarded-page.ts`).
+- **Decisión.**
+  - **URL** (`checkUrl`): solo http(s); sin usuario ni contraseña; puertos 80, 443, 8080 y
+    8443; longitud máxima 2.048. Se apoya en el parser WHATWG, que normaliza las IPv4 disfrazadas
+    (decimal, octal, hexadecimal, formas cortas, dígitos de ancho completo) antes de mirarlas.
+    Se rechazan nombres de una sola etiqueta y sufijos de uso privado (`localhost`,
+    `.local`, `.internal`, `.lan`, `.corp`, `.home.arpa`…).
+  - **Direcciones** (`classifyAddress`): lista de rangos IPv4 no públicos (loopback,
+    privados, link-local con el endpoint de metadata, CGNAT, documentación, multicast,
+    reservados). En IPv6 solo se admite unicast global (2000::/3), y **toda dirección que
+    incruste una IPv4** (mapeada, NAT64, 6to4, Teredo) se rechaza sin desenvolverla: una web
+    real no se alcanza así y cada una de esas formas es un rodeo clásico a una lista IPv4.
+  - **DNS** (`createDohResolver`): A y AAAA por DNS sobre HTTPS. Basta **un** registro no
+    público entre varios públicos para rechazar el nombre.
+  - **Guard en el navegador**: cada petición de la página (documento, redirecciones y
+    subrecursos) se pausa y se valida antes de salir. Se usa el dominio Fetch del protocolo
+    DevTools y **no** `page.route`: Playwright no vuelve a llamar a sus manejadores en
+    los saltos de una redirección, que es justo lo que hay que revalidar. Máximo 3
+    redirecciones del documento; service workers bloqueados.
+  - Un veredicto por nombre y auditoría, y como máximo 10 nombres distintos por auditoría:
+    cada uno cuesta 2 subpeticiones DNS y el plan Free da 50 por petición.
+  - Los mensajes de rechazo no incluyen direcciones resueltas ni detalles internos.
+- **Alternativas.** `page.route` (no cubre redirecciones). Resolver las redirecciones
+  desde el Worker con `fetch` manual antes de navegar (más subpeticiones y dos
+  implementaciones de la misma regla).
+- **Consecuencias.**
+  - Riesgo residual declarado y con test: el navegador resuelve el nombre por su cuenta después
+    de nuestra comprobación, así que un DNS que cambia entre ambas (rebinding) no se detecta.
+  - No cubierto: los WebSocket no pasan por el dominio Fetch.
+  - Páginas con más de 10 hosts pierden subrecursos, lo que puede alterar algún resultado
+    (por ejemplo contraste si falta una hoja de estilos).
+  - Pendiente de evaluar en el despliegue: `@cloudflare/playwright` admite
+    `guardrails.allowedDomains` al crear la sesión, una restricción de tráfico saliente
+    aplicada por la infraestructura de Cloudflare. Sería una tercera capa.
+
+### ADR-016 · Spike de CPU antes de construir la API
+
+- **Contexto.** El plan Free da 10 ms de CPU por petición. Esperar al navegador no cuenta, pero
+  sí cada mensaje del protocolo que el Worker serializa o interpreta, y el guard añade uno por
+  petición de la página. Un Worker no puede medir su propia CPU (los relojes no avanzan
+  mientras calcula) y `wrangler dev` no aplica el límite.
+- **Decisión.** Desplegar un endpoint temporal `POST /spike` que audita solo nuestro
+  sitio de ejemplo con cuatro variantes (sin guard, con guard, y con 4 y 12 ciclos de aplicar
+  parche, reejecutar axe y deshacer). Solo existe mientras hay un secreto `SPIKE_TOKEN`,
+  que el workflow genera al azar, usa y borra en la misma ejecución. La respuesta es el
+  resultado: 200, o error 1102 si se supera la CPU. El tiempo de CPU exacto se lee en los logs
+  del Worker.
+- **Qué se decide con el resultado.**
+  - Si cabe con margen: una sola petición hace auditoría y parches.
+  - Si la auditoría cabe pero los parches no: la auditoría va en una petición y los parches en
+    otras, reutilizando la sesión del navegador (`acquire` / `connect`).
+  - Si ni la auditoría cabe: se retira el guard por petición en favor de
+    `guardrails` y la validación previa, o la API pública se limita a "Pegar HTML".
+- **Para reducir CPU desde ya.** axe se ejecuta dentro del navegador y devuelve solo
+  infracciones y dudosos, recortados allí (`runAxeInPage`); en las verificaciones, solo
+  ids de regla y selectores.
+
 ## 6. Stack y por qué
 
 | Pieza | Elección | Motivo |
@@ -365,6 +426,19 @@ justifica aquí antes de añadirse.
 | Dependencia | Dónde | Motivo |
 | --- | --- | --- |
 | `openai` | `core` | Cliente para cualquier endpoint compatible con OpenAI (Groq, OpenRouter, Ollama). Fijado a 7.28.0: pnpm rechaza por defecto versiones publicadas hace menos de un día y la 7.30.0 lo era; se mantiene esa protección en lugar de añadir una excepción. |
+
+**Dependencias de la fase 3b (hasta ahora)**
+
+| Dependencia | Dónde | Motivo |
+| --- | --- | --- |
+| `@cloudflare/playwright` | `api` | Cliente de Playwright para Browser Rendering. |
+| `playwright-core` | `api` | Solo tipos: el fork reexporta los suyos por una ruta que la resolución NodeNext no sigue. |
+| `axe-core` | `api` | Se empaqueta como texto y se envía al navegador remoto; no se ejecuta en el Worker. Misma versión (4.13.0) que usa la CLI. |
+| `playwright` | `api` (dev) | Los tests del guard y de axe corren en un Chromium local real. |
+
+Los tipos de runtime de Cloudflare (`@cloudflare/workers-types`) no se usan: chocan con los
+del DOM, que hacen falta para el código que se ejecuta dentro de la página. Los bindings se
+tipan a mano en `apps/api/src/env.ts`.
 
 La regla `complexity/useLiteralKeys` de Biome está desactivada porque contradice a
 `noPropertyAccessFromIndexSignature` de TypeScript, que es la más estricta de las dos.
@@ -402,6 +476,13 @@ la validación con zod y el reintento son obligatorios.
 - Tope de grupos enviados al LLM por auditoría y caché de 24 h por hash.
 - Estimación propia, pendiente de medir en 3b: unas 20–40 auditorías/día por tiempo de navegador y
   10–15 con parches por neurons con un modelo de 70B.
+
+**Recomprobado el 2026-10-07 antes de la fase 3b.** Sin cambios en CPU (10 ms; esperar a red,
+KV o bindings no cuenta; al superarla, error 1102), subpeticiones (50 por petición, incluidas
+las de KV) ni Browser Rendering (10 min/día, 3 navegadores, 1 nuevo cada 20 s; al agotar el
+día, error 429 hasta el siguiente día UTC). Novedad respecto a la primera lectura: el límite
+de tamaño del Worker es de 64 MiB sin comprimir (el nuestro ocupa 5,4 MiB) y no hay límite de
+duración para peticiones HTTP.
 
 **Límites de los proveedores LLM vistos en la fase 3 (2026-10-07).** Groq, nivel gratuito,
 `openai/gpt-oss-120b`: 8.000 tokens por minuto. Una auditoría con `--fix` de una página del sitio
@@ -490,7 +571,7 @@ verificados, % que introducen nuevas violaciones, latencia, tokens y coste por m
 | 1 | Esqueleto del monorepo, CI, `CLAUDE.md`, `docs/IDEA.md`, `fixtures/broken-site`, despliegue en Pages | Hecha (CI y despliegue verificados el 2026-10-07) |
 | 2 | Core + CLI: auditoría con axe, salidas JSON / Markdown / HTML / SARIF, sin LLM | Hecha (2026-10-07) |
 | 3 | Capa LLM, verificación de parches y caché | Hecha (2026-10-07). Pendiente para más adelante: parches que tocan más de un elemento |
-| 3b | `apps/api`: empieza con un spike que mide la CPU de Playwright en Workers; después anti-SSRF, Turnstile, rate limit, Browser Rendering, Workers AI, KV, presupuesto | Pendiente |
+| 3b | `apps/api`: spike de CPU de Playwright en Workers, anti-SSRF, Turnstile, rate limit, Browser Rendering, Workers AI, KV, presupuesto | En curso. Hecho: anti-SSRF, guard en el navegador, axe compacto y spike. Bloqueado hasta ejecutar el spike desplegado: el resto |
 | 4 | Evals y tabla comparativa | Pendiente |
 | 5 | Web: demo, auditar URL, pegar HTML, ver informe, BYOK | Pendiente |
 | 6 | GitHub Action y publicación en npm con Changesets | Pendiente |
@@ -523,3 +604,7 @@ verificados, % que introducen nuevas violaciones, latencia, tokens y coste por m
 | 2026-10-07 | Formato `text` nuevo y por defecto en la CLI; Markdown pasa a pedirse con `--format`. Tablas resumen con una fila por regla. Fragmentos sin el sangrado del fichero original. |
 | 2026-10-07 | `--fix` sin proveedor configurado es un error inmediato; `--model`, `--provider`, `--max-llm-calls` y `--no-cache` sin `--fix` se rechazan en vez de ignorarse. |
 | 2026-10-07 | El informe HTML deja de marcar cada grupo como región con nombre: dos grupos de la misma regla generaban landmarks duplicados (detectado al auditar el propio informe). |
+| 2026-10-07 | Fase 3b: anti-SSRF implementado con guard sobre el dominio Fetch de DevTools en lugar de `page.route`, que no revalida redirecciones (ADR-015). |
+| 2026-10-07 | Se rechaza cualquier IPv6 que incruste una IPv4 y se limita cada auditoría a 10 hosts distintos por el tope de subpeticiones (ADR-015). |
+| 2026-10-07 | Spike de CPU con endpoint temporal protegido por un secreto efímero; el diseño del resto de la API depende de su resultado (ADR-016). |
+| 2026-10-07 | Los tests del código de navegador de la API usan Chromium local: en esta máquina `wrangler dev` no logra arrancar su navegador local. |

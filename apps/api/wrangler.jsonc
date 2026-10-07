@@ -1,0 +1,17 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "allytic-api",
+  "main": "src/index.ts",
+  // @cloudflare/playwright needs the native node:fs API (2025-09-15 or later) and nodejs_compat.
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "browser": {
+    "binding": "BROWSER"
+  },
+  // axe-core is sent to the remote browser as text; it never runs inside the Worker.
+  "rules": [{ "type": "Text", "globs": ["**/axe.min.js"], "fallthrough": true }],
+  // CPU time per invocation shows up in the Workers logs, which is how the spike is read.
+  "observability": {
+    "enabled": true
+  }
+}

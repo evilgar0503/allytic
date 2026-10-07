@@ -1,4 +1,12 @@
 {
   "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // DOM typings serve two purposes: the fetch API types of the Worker runtime and the
+    // callbacks that run inside the remote browser. Cloudflare's ambient runtime types are not
+    // used because they clash with the DOM ones; bindings are typed by hand in env.ts.
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "noEmit": true
+  },
   "include": ["src"]
 }
