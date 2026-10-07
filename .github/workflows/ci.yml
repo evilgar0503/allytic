@@ -30,6 +30,11 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      # The CLI end-to-end tests audit fixtures/broken-site in a real browser.
+      - name: Install Chromium for Playwright
+        run: pnpm --filter allytic exec playwright install --with-deps chromium
+
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
