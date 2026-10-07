@@ -27,9 +27,10 @@
       <h1>Order ahead</h1>
 
       <form action="#">
-        <!-- DEFECT label: text input with only a placeholder. -->
+        <!-- DEFECT label: the visible text is not associated with the input. -->
         <div class="field">
-          <input type="text" name="name" placeholder="Your name" />
+          <span>Your name</span>
+          <input type="text" name="name" />
         </div>
 
         <!-- DEFECT autocomplete-valid: invalid autocomplete token. -->

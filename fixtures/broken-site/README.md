@@ -8,11 +8,12 @@ It is the only target the public demo audits, and the oracle for the CLI end-to-
 - Excluded from Biome on purpose: the markup must stay broken.
 - Served with `noindex` so it never shows up in search results.
 
-## Catalogue of expected findings
+## Catalogue of findings
 
-The rule ids are the ones axe-core is **expected** to report. The catalogue is validated
-against real axe output in phase 2 (CLI e2e tests); until then treat it as a specification,
-not as measured results.
+The rule ids below are what axe-core reports on each page. The machine-readable version is
+[`../broken-site.expected.json`](../broken-site.expected.json), and the CLI end-to-end tests
+fail if a page reports any rule that is not listed there, or misses one that is. When you add
+or change a defect, update both.
 
 ### `index.html`
 
@@ -28,20 +29,28 @@ not as measured results.
 | `list` | `<ul>` with a `<div>` child | 1.3.1 |
 | `tabindex` | `tabindex="3"` | best practice |
 | `target-size` | `.pager` links (12×12 px) | 2.5.8 |
+| `region` | banner outside any landmark (every page) | best practice |
 
 ### `forms.html`
 
 | axe rule | Element | WCAG |
 | --- | --- | --- |
-| `label` | name input with placeholder only | 1.3.1, 4.1.2 |
+| `label` | name input next to unassociated text | 1.3.1, 4.1.2 |
 | `autocomplete-valid` | `autocomplete="nope"` | 1.3.5 |
 | `select-name` | unlabelled `<select>` | 4.1.2 |
 | `aria-required-attr` | `role="checkbox"` without `aria-checked` | 4.1.2 |
 | `aria-valid-attr-value` | `aria-expanded="yes"` | 4.1.2 |
 | `aria-roles` | `role="buton"` | 4.1.2 |
-| `duplicate-id-aria` | two `id="pickup"` | 4.1.2 |
 | `aria-hidden-focus` | button inside `aria-hidden="true"` | 4.1.2 |
 | `nested-interactive` | link inside a button | 4.1.2 |
+| `target-size` | side effect of the nested link and button | 2.5.8 |
+| `region` | banner outside any landmark | best practice |
+
+Needs manual review (axe cannot decide on its own):
+
+| axe rule | Element | WCAG |
+| --- | --- | --- |
+| `duplicate-id-aria` | two `id="pickup"` | 4.1.2 |
 
 ### `media.html`
 
@@ -55,6 +64,13 @@ not as measured results.
 | `td-headers-attr` | `headers="opening"` | 1.3.1 |
 | `definition-list` | `<dl>` with a `<p>` child | 1.3.1 |
 | `input-image-alt` | `<input type="image">` without `alt` | 1.1.1, 4.1.2 |
+| `region` | banner outside any landmark | best practice |
+
+### Things learned while validating the catalogue
+
+- A `placeholder` is enough for axe to consider an input named, so the original "placeholder
+  only" input did not trigger `label`. It is a poor label for people, but not a detectable one.
+- Duplicate ids referenced from ARIA are reported as "needs review", not as a violation.
 
 ### Defects axe cannot detect
 

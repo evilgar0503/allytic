@@ -1,0 +1,47 @@
+{
+  "index.html": {
+    "violations": [
+      "button-name",
+      "color-contrast",
+      "heading-order",
+      "html-has-lang",
+      "image-alt",
+      "link-name",
+      "list",
+      "meta-viewport",
+      "region",
+      "tabindex",
+      "target-size"
+    ],
+    "needsReview": []
+  },
+  "forms.html": {
+    "violations": [
+      "aria-hidden-focus",
+      "aria-required-attr",
+      "aria-roles",
+      "aria-valid-attr-value",
+      "autocomplete-valid",
+      "label",
+      "nested-interactive",
+      "region",
+      "select-name",
+      "target-size"
+    ],
+    "needsReview": ["duplicate-id-aria"]
+  },
+  "media.html": {
+    "violations": [
+      "definition-list",
+      "document-title",
+      "frame-title",
+      "html-lang-valid",
+      "input-image-alt",
+      "marquee",
+      "region",
+      "role-img-alt",
+      "td-headers-attr"
+    ],
+    "needsReview": []
+  }
+}
