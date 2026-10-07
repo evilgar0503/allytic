@@ -48,8 +48,27 @@ jobs:
 
       # Direct upload: does not consume the 500 builds/month of the Pages Free plan.
       - name: Deploy
+        env:
+          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/wrangler-output.ndjson
         run: >
           pnpm exec wrangler pages deploy fixtures/broken-site
           --project-name="$PAGES_PROJECT"
           --branch=main
           --commit-dirty=true
+
+      - name: Smoke test the deployment
+        env:
+          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/wrangler-output.ndjson
+        run: |
+          url=$(node -e '
+            const lines = require("node:fs").readFileSync(process.env.WRANGLER_OUTPUT_FILE_PATH, "utf8").split("\n").filter(Boolean);
+            const deploy = lines.map((line) => JSON.parse(line)).find((entry) => entry.type === "pages-deploy");
+            if (!deploy?.url) { console.error("No pages-deploy entry in wrangler output"); process.exit(1); }
+            console.log(deploy.url);
+          ')
+          echo "Deployment URL: $url" | tee -a "$GITHUB_STEP_SUMMARY"
+          for page in index.html forms.html media.html styles.css; do
+            curl --fail --silent --show-error --location --retry 5 --retry-all-errors --retry-delay 5 \
+              --output /dev/null "$url/$page"
+            echo "OK $page"
+          done
