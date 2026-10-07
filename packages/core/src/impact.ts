@@ -4,6 +4,7 @@ export const IMPACT_LEVELS = ["minor", "moderate", "serious", "critical"] as con
 export type Impact = (typeof IMPACT_LEVELS)[number];
 
 export function isImpact(value: unknown): value is Impact {
+  // Widening cast only: Array.includes on a tuple of literals rejects a plain string.
   return typeof value === "string" && (IMPACT_LEVELS as readonly string[]).includes(value);
 }
 

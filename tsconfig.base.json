@@ -18,6 +18,7 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "declaration": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "customConditions": ["@allytic/source"]
   }
 }
