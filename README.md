@@ -19,7 +19,8 @@ rule stops failing and no new violations appear.
 ## Demo
 
 Coming in phase 5. The demo only ever audits
-[`fixtures/broken-site`](fixtures/broken-site), a deliberately broken site that ships with this
+[`fixtures/broken-site`](fixtures/broken-site) (live at <https://allytic-broken-site.pages.dev>),
+a deliberately broken site that ships with this
 repository, never third-party websites.
 
 ## Install

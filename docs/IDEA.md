@@ -3,7 +3,8 @@
 > Fuente de verdad del proyecto. Se actualiza en el mismo commit que cualquier cambio de
 > funcionalidad, arquitectura, stack, alcance, límites o decisiones (ver `CLAUDE.md`).
 >
-> Estado: **fase 1 completada en local** (esqueleto, CI, documentación y sitio de ejemplo).
+> Estado: **fase 1 completada** (esqueleto, CI, documentación y sitio de ejemplo desplegado en
+> <https://allytic-broken-site.pages.dev>).
 > Última revisión: 2026-10-07.
 
 ## 1. Visión y problema
@@ -295,7 +296,7 @@ verificados, % que introducen nuevas violaciones, latencia, tokens y coste por m
 
 | Fase | Contenido | Estado |
 | --- | --- | --- |
-| 1 | Esqueleto del monorepo, CI, `CLAUDE.md`, `docs/IDEA.md`, `fixtures/broken-site`, despliegue en Pages | Hecha en local; pendiente verificar CI y despliegue en remoto |
+| 1 | Esqueleto del monorepo, CI, `CLAUDE.md`, `docs/IDEA.md`, `fixtures/broken-site`, despliegue en Pages | Hecha (CI y despliegue verificados el 2026-10-07) |
 | 2 | Core + CLI: auditoría con axe, salidas JSON / Markdown / HTML / SARIF, sin LLM | Pendiente |
 | 3 | Capa LLM, verificación de parches y caché | Pendiente |
 | 3b | `apps/api`: empieza con un spike que mide la CPU de Playwright en Workers; después anti-SSRF, Turnstile, rate limit, Browser Rendering, Workers AI, KV, presupuesto | Pendiente |
@@ -316,4 +317,5 @@ verificados, % que introducen nuevas violaciones, latencia, tokens y coste por m
 | 2026-10-07 | Tercer estado de verificación, "No verificable automáticamente" (ADR-006). |
 | 2026-10-07 | Pages con direct upload desde GitHub Actions (ADR-007). |
 | 2026-10-07 | Node 24 LTS, pnpm 12, TypeScript 7, Biome 2 y Vitest 5 como base. Sin project references de TypeScript por ahora: no hay imports entre paquetes; se añadirán en la fase 2. |
+| 2026-10-07 | El despliegue del sitio de ejemplo incluye un smoke test que lee la URL del fichero de salida de Wrangler y espera al certificado TLS. |
 | 2026-10-07 | El sitio de ejemplo se sirve sin CSP para no interferir con la inyección de axe; no contiene scripts. |
