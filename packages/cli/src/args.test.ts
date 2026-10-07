@@ -8,20 +8,23 @@ function auditOptions(argv: string[]) {
   return command.options;
 }
 
+const AI_DEFAULTS = { fix: false, provider: null, model: null, maxLlmCalls: 20, cache: true };
+
 describe("parseCommand", () => {
   it("applies defaults", () => {
     expect(auditOptions(["audit", "https://example.test"])).toEqual({
       target: "https://example.test",
-      formats: ["markdown"],
+      formats: ["text"],
       output: null,
       outputDir: null,
       failOn: null,
       wcagOnly: false,
       timeoutMs: DEFAULT_TIMEOUT_MS,
+      ...AI_DEFAULTS,
     });
   });
 
-  it("reads every option", () => {
+  it("reads the report options", () => {
     expect(
       auditOptions([
         "audit",
@@ -44,6 +47,30 @@ describe("parseCommand", () => {
       failOn: "serious",
       wcagOnly: true,
       timeoutMs: 5000,
+      ...AI_DEFAULTS,
+    });
+  });
+
+  it("reads the AI options", () => {
+    expect(
+      auditOptions([
+        "audit",
+        "page.html",
+        "--fix",
+        "--provider",
+        "openrouter",
+        "--model",
+        "vendor/model:free",
+        "--max-llm-calls",
+        "5",
+        "--no-cache",
+      ]),
+    ).toMatchObject({
+      fix: true,
+      provider: "openrouter",
+      model: "vendor/model:free",
+      maxLlmCalls: 5,
+      cache: false,
     });
   });
 
@@ -80,12 +107,19 @@ describe("parseCommand", () => {
     [["audit", "a.html", "b.html"], /Only one target/],
     [["audit", "a.html", "--format", "pdf"], /Unknown format "pdf"/],
     [["audit", "a.html", "--fail-on", "blocker"], /Unknown impact "blocker"/],
-    [["audit", "a.html", "--timeout", "soon"], /--timeout must be a positive number/],
-    [["audit", "a.html", "--timeout", "0"], /--timeout must be a positive number/],
+    [["audit", "a.html", "--timeout", "soon"], /--timeout must be a positive whole number/],
+    [["audit", "a.html", "--timeout", "0"], /--timeout must be a positive whole number/],
     [["audit", "a.html", "-f", "json,html"], /use --output-dir/],
     [["audit", "a.html", "-o", "a.json", "--output-dir", "out"], /either --output or --output-dir/],
-    [["audit", "a.html", "--fix"], /Unknown option '--fix'/],
     [["audit", "a.html", "--output"], /argument missing/],
+    [["audit", "a.html", "--fix", "--max-llm-calls", "0"], /--max-llm-calls must be a positive/],
+    [["audit", "a.html", "--fix", "--provider", "openai"], /Unknown provider "openai"/],
+    // Options that would be silently ignored are refused instead.
+    [["audit", "a.html", "--model", "x"], /--model only applies with --fix/],
+    [["audit", "a.html", "--provider", "groq"], /--provider only applies with --fix/],
+    [["audit", "a.html", "--no-cache"], /--no-cache only applies with --fix/],
+    // Keys are never accepted on the command line, where they would end up in shell history.
+    [["audit", "a.html", "--fix", "--api-key", "secret"], /Unknown option '--api-key'/],
   ])("rejects %j with a usage error", (argv, message) => {
     expect(() => parseCommand(argv)).toThrow(UsageError);
     expect(() => parseCommand(argv)).toThrow(message);

@@ -8,9 +8,9 @@
 code patch, then **applies the patch and re-runs axe**. A fix is only labelled *Verified* when the
 rule stops failing and no new violations appear.
 
-> **Status: early development.** The CLI already audits pages and writes JSON, Markdown, HTML and
-> SARIF reports. AI explanations, verified patches, the API and the web app are being built in
-> phases; see the [roadmap](docs/IDEA.md#11-roadmap).
+> **Status: early development.** The CLI audits pages, asks a model to explain and patch each
+> issue, and verifies every patch by re-running axe-core. The hosted API, the web app and the
+> model comparison are being built in phases; see the [roadmap](docs/IDEA.md#11-roadmap).
 
 > **Automated testing only covers part of WCAG.** Allytic never claims a site is "compliant" or
 > legally conformant. Manual review and testing with assistive technology users are still needed.
@@ -36,15 +36,46 @@ pnpm build
 node packages/cli/dist/bin.js audit https://allytic-broken-site.pages.dev
 ```
 
+Add `--fix` to get an explanation and a verified patch for each issue. It needs a free API key
+from [Groq](https://console.groq.com/keys) or [OpenRouter](https://openrouter.ai/settings/keys)
+in a `.env` file (see [`.env.example`](.env.example)), or a local [Ollama](https://ollama.com):
+
+```bash
+node packages/cli/dist/bin.js audit https://allytic-broken-site.pages.dev --fix
+```
+
+```text
+CRITICAL  Images must have alternative text
+  image-alt · WCAG 1.1.1 (A) · 1 element
+  - img
+  Why: The <img> element is missing an alt attribute, so screen readers have no text to
+       convey what the image shows. [...]
+  Who: Screen reader users and other assistive technology users [...]
+  Fix [Verified] for img
+    - <img src="img/beans.svg" width="320" height="180">
+    + <img src="img/beans.svg" width="320" height="180" alt="Coffee beans">
+```
+
+*Verified* means the patch was applied in the page, axe-core was run again, the rule no longer
+fails on that element and no rule reports more elements than before. It does not mean the fix
+is the best one: the model cannot see the image, so that alt text is a guess to be checked.
+With `--fix`, markup from the audited page is sent to the model provider you chose.
+
 ```text
 allytic audit <url|file> [options]
 
-  -f, --format <format>  json, markdown, html, sarif (default: markdown); repeat or use commas
+  -f, --format <format>  text, json, markdown, html, sarif (default: text); repeat or use commas
   -o, --output <file>    write the report to a file instead of stdout
       --output-dir <dir> write one allytic-report.<ext> per format
       --fail-on <impact> exit with code 1 on minor, moderate, serious or critical issues
       --wcag-only        skip axe "best practice" rules that are not part of WCAG
       --timeout <ms>     page load timeout (default: 30000)
+
+      --fix                explain each issue, propose a patch and verify it
+      --provider <name>    groq, openrouter, ollama (default: the first one with an API key)
+      --model <id>         model to use instead of the provider's default
+      --max-llm-calls <n>  upper bound of model calls per audit (default: 20)
+      --no-cache           do not reuse cached model answers (.allytic/cache)
 ```
 
 Any public URL can be audited, including sites you do not own. Local HTML files work too.
@@ -67,7 +98,8 @@ Planned GitHub Action (phase 6):
 | Workspace | Role |
 | --- | --- |
 | `packages/core` | Domain types, axe result normalization and grouping, LLM layer, patch verification. No Node or DOM dependencies. |
-| `packages/cli` | `allytic audit <url\|file>` with Playwright. Outputs JSON, Markdown, HTML and SARIF. |
+| `packages/cli` | `allytic audit <url\|file>` with Playwright. Outputs text, JSON, Markdown, HTML and SARIF. |
+| `packages/page-scripts` | Self-contained functions that run inside the audited page to apply, check and undo a patch. |
 | `packages/action` | GitHub Action: runs the CLI, uploads SARIF, comments on the PR. |
 | `apps/api` | Cloudflare Worker that orchestrates URL audits (Browser Rendering, Workers AI, KV). |
 | `apps/web` | Vite + React SPA: demo, URL audit, paste HTML (fully client-side), report viewer. |
@@ -98,7 +130,9 @@ Details: [`docs/IDEA.md`, section 8](docs/IDEA.md#8-seguridad-y-privacidad).
 - Automated rules detect only a subset of accessibility problems.
 - *Verified* means axe no longer reports the rule on the patched DOM, not that the fix is ideal
   (for example, generated alt text still needs a human check).
-- Patches (phase 3) will target the rendered DOM, not your source files.
+- Patches target the rendered DOM, not your source files, and change a single element: fixes
+  that need to touch another element (adding a `<title>`, for instance) stay unverified.
+- One suggestion per group of similar elements, tested on the first one.
 - One page per run, audited as it is right after loading: no login, no interaction.
 - SARIF alerts point at line 1 of the file or at the URL, because axe works on the DOM.
 - The hosted demo runs on daily free quotas and can be temporarily unavailable.

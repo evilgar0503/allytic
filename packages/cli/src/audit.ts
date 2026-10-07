@@ -1,7 +1,14 @@
-import { type AuditReport, buildReport } from "@allytic/core";
+import {
+  type AuditReport,
+  addSuggestions,
+  buildReport,
+  type LlmCache,
+  type LlmProvider,
+} from "@allytic/core";
 import { AxeBuilder } from "@axe-core/playwright";
 import { type Browser, chromium, errors as playwrightErrors } from "playwright";
 import { BrowserNotInstalledError, NavigationError } from "./errors.js";
+import { createPlaywrightEnvironment } from "./patch-environment.js";
 import type { ResolvedTarget } from "./target.js";
 import { TOOL_NAME, toolVersion } from "./version.js";
 
@@ -9,10 +16,19 @@ import { TOOL_NAME, toolVersion } from "./version.js";
 const WCAG_22_AA_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 const BEST_PRACTICE_TAG = "best-practice";
 
+export interface FixOptions {
+  provider: LlmProvider;
+  cache: LlmCache | null;
+  maxLlmCalls: number;
+  onProgress?: (event: { done: number; total: number; ruleId: string }) => void;
+}
+
 export interface RunAuditOptions {
   timeoutMs: number;
   /** Skip axe rules that are good practice but not part of WCAG. */
   wcagOnly: boolean;
+  /** When present, every group gets an AI explanation and a patch that is tried in the page. */
+  fix?: FixOptions;
   now?: Date;
 }
 
@@ -65,13 +81,24 @@ export async function runAudit(
     }
 
     const tags = options.wcagOnly ? WCAG_22_AA_TAGS : [...WCAG_22_AA_TAGS, BEST_PRACTICE_TAG];
-    const axeResults = await new AxeBuilder({ page }).withTags(tags).analyze();
+    // The same configuration is used for the audit and for every patch check, so that the
+    // "no new violations" comparison is between like and like.
+    const runAxe = (): Promise<unknown> => new AxeBuilder({ page }).withTags(tags).analyze();
 
-    return buildReport({
-      axeResults,
+    const report = buildReport({
+      axeResults: await runAxe(),
       tool: { name: TOOL_NAME, version: toolVersion() },
       target: { kind: target.kind, input: target.input, title: (await page.title()) || null },
       now: options.now ?? new Date(),
+    });
+    if (!options.fix) return report;
+
+    return await addSuggestions(report, {
+      provider: options.fix.provider,
+      cache: options.fix.cache,
+      maxLlmCalls: options.fix.maxLlmCalls,
+      environment: createPlaywrightEnvironment(page, runAxe),
+      ...(options.fix.onProgress ? { onProgress: options.fix.onProgress } : {}),
     });
   } finally {
     await browser.close();

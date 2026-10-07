@@ -3,8 +3,9 @@
 > Fuente de verdad del proyecto. Se actualiza en el mismo commit que cualquier cambio de
 > funcionalidad, arquitectura, stack, alcance, límites o decisiones (ver `CLAUDE.md`).
 >
-> Estado: **fase 2 completada** (core + CLI: auditoría con axe e informes JSON, Markdown, HTML y
-> SARIF, sin LLM). Sitio de ejemplo en <https://allytic-broken-site.pages.dev>.
+> Estado: **fase 3 completada** (la CLI audita, y con `--fix` pide a un LLM explicación y parche
+> para cada problema y verifica el parche reejecutando axe en la página). Sitio de ejemplo en
+> <https://allytic-broken-site.pages.dev>.
 > Última revisión: 2026-10-07.
 
 ## 1. Visión y problema
@@ -120,6 +121,7 @@ Monorepo pnpm con TypeScript estricto:
 | --- | --- | --- |
 | `packages/core` | Tipos de dominio, normalización y agrupación de resultados de axe, capa LLM, prompts, esquemas zod, caché y verificación. API pública sin dependencias de Node ni del DOM. | 2–3 |
 | `packages/cli` | `allytic audit`, Playwright + `@axe-core/playwright`, formatos de salida. | 2 |
+| `packages/page-scripts` | Funciones autocontenidas que se ejecutan **dentro** de la página auditada para leer un elemento, aplicar un parche, deshacerlo y localizar el elemento parcheado. Las usa la CLI vía `page.evaluate`; las usarán la API y el iframe de la web. | 3 |
 | `packages/action` | GitHub Action sobre la CLI: SARIF + comentario en PR. | 6 |
 | `apps/api` | Worker que orquesta auditorías por URL. | 3b |
 | `apps/web` | SPA accesible desplegada en Pages. | 5 |
@@ -232,8 +234,9 @@ Monorepo pnpm con TypeScript estricto:
     engañoso.
   - Las comprobaciones que axe no puede decidir ("incomplete") se muestran aparte como
     "necesita revisión manual" y no cuentan como problemas ni para `--fail-on`.
-  - `--fix`, `--model`, `--provider` y `--max-llm-calls` no existen todavía: llegan en la fase 3
-    y hasta entonces se rechazan como opción desconocida, en vez de aceptarse sin efecto.
+  - Desde la fase 3: `--fix` activa las explicaciones y parches con IA; `--provider`, `--model`,
+    `--max-llm-calls` (20 por defecto) y `--no-cache` solo se aceptan junto a `--fix`. El formato
+    por defecto pasa a ser `text`, pensado para leerse en la terminal.
 - **Alternativas.** Un subcomando por formato; salida a fichero por defecto (peor para tuberías).
 - **Consecuencias.** Los formateadores viven en `core` como funciones puras de texto, así la web
   podrá reutilizarlos en "Ver informe".
@@ -264,6 +267,72 @@ Monorepo pnpm con TypeScript estricto:
 - **Consecuencias.** `pnpm check` no depende del orden de compilación. Los tests exigen tener
   Chromium instalado (`playwright install chromium`), también en CI.
 
+### ADR-012 · Capa LLM: interfaz mínima, SDK `openai` y salida reducida
+
+- **Contexto.** Hay que hablar con Groq, OpenRouter y Ollama hoy, y con Workers AI en la fase 3b,
+  con modelos gratuitos que fallan, se saturan y devuelven JSON imperfecto.
+- **Decisión.**
+  - `LlmProvider` es una interfaz de un solo método (`complete`) en `core`. El adaptador para
+    endpoints compatibles con OpenAI usa el SDK `openai`, que aporta reintentos con backoff
+    (respetando `Retry-After`), timeout y errores tipados. Workers AI será otro adaptador.
+  - Los errores se clasifican en `auth` y `bad_request` (abortan: es un problema de
+    configuración) y `rate_limited`, `timeout` y `unavailable` (transitorios: se deja de llamar
+    al modelo y se entrega lo conseguido). Los mensajes de los transitorios son genéricos porque
+    acaban en el informe y el texto del proveedor puede incluir el identificador de la cuenta.
+  - **El modelo solo devuelve** `explanation`, `affects`, `patch.after` y `confidence`. El
+    criterio WCAG, el impacto y el `before` que pedía el documento original no se le piden:
+    axe ya da los dos primeros y el `before` lo leemos de la página; pedírselos al modelo solo
+    añade tokens y ocasiones de equivocarse.
+  - La respuesta se valida con zod tras extraer el JSON aunque venga envuelto en texto o en un
+    bloque de código, y se deshace el doble escapado de saltos de línea (visto en respuestas
+    reales). El modo JSON del proveedor se usa donde existe, sin depender de él.
+  - Claves solo por variables de entorno o `.env` (`process.loadEnvFile`, sin dependencia
+    extra). No existe `--api-key`: acabaría en el historial de la shell.
+  - Valores por defecto: Groq `openai/gpt-oss-120b` con `reasoning_effort: low`; OpenRouter
+    `google/gemma-4-31b-it:free` con dos modelos de respaldo en `models`; Ollama `llama3.2`.
+- **Alternativas.** `fetch` a mano (menos dependencia, pero reimplementa reintentos y errores);
+  salida estructurada con JSON Schema (no disponible en todos los modelos gratuitos).
+- **Consecuencias.** Los alineamientos de modelos gratuitos cambian a menudo: los valores por
+  defecto están en una única tabla (`llm/presets.ts`) y `--model` permite saltárselos.
+
+### ADR-013 · Qué es un parche y cuándo está "Verificado"
+
+- **Contexto.** El fragmento que da axe puede estar recortado, y elementos como `<html>` o una
+  lista larga no se pueden enviar ni reemplazar enteros.
+- **Decisión.**
+  - Se trabaja con el marcado **vivo**: antes de preguntar al modelo se lee el elemento de la
+    página. Si ocupa hasta 2.000 caracteres se envía completo y el parche lo reemplaza. Si es
+    mayor, o es `<html>`, `<head>` o `<body>`, se envía solo la etiqueta (`childrenOmitted`) y el
+    parche solo cambia atributos (o la etiqueta, conservando los hijos).
+  - Un parche es exactamente un elemento raíz; puede envolver al original.
+  - **Verificado** exige las dos condiciones: axe ya no informa de la regla en el elemento
+    parcheado ni dentro de él (un resultado "indeciso" no cuenta como aprobado), y ninguna regla
+    informa de más elementos que en la auditoría original.
+  - Cada parche se aplica, se comprueba con una ejecución completa de axe con la misma
+    configuración que la auditoría, y se deshace antes del siguiente.
+  - Un intento más un reintento por grupo, sea cual sea el motivo del primer fallo (respuesta
+    mal formada o verificación fallida); el reintento incluye el motivo. Si la segunda respuesta
+    tampoco sirve: sin sugerencia (queda la descripción de axe) o parche mostrado como "No
+    verificado". El documento original preveía un reintento por cada tipo de fallo; se unifican
+    para acotar el coste a 2 llamadas por grupo.
+  - Una sugerencia por grupo, escrita y probada sobre su primer elemento.
+- **Alternativas.** Operaciones estructuradas (`setAttribute`…) en lugar de HTML: más robustas
+  pero ilegibles como "antes / después". Recargar la página entre parches: más limpio y mucho
+  más lento.
+- **Consecuencias.** Arreglos que exigen tocar otro elemento no se pueden verificar; el caso
+  típico es `document-title`, que falla en `<html>` y se arregla añadiendo un `<title>` en
+  `<head>`. Queda como "No verificado" y está en el roadmap.
+
+### ADR-014 · Caché de respuestas del modelo
+
+- **Decisión.** Clave = SHA-256 de `[modelo, instrucciones, mensaje]`. El mensaje ya contiene la
+  regla, el marcado del elemento y, en un reintento, el motivo del rechazo, así que dos
+  peticiones comparten clave solo si al modelo se le preguntaría exactamente lo mismo. Cambiar
+  el prompt invalida la caché sin más. Solo se guardan respuestas que superan la validación.
+  Implementaciones: memoria (`core`), ficheros en `.allytic/cache` (CLI), KV (API, fase 3b).
+- **Consecuencias.** La verificación no se cachea: se repite siempre contra la página real.
+  Repetir una auditoría sin cambios cuesta cero llamadas (`--no-cache` lo desactiva).
+
 ## 6. Stack y por qué
 
 | Pieza | Elección | Motivo |
@@ -290,6 +359,15 @@ justifica aquí antes de añadirse.
 | `playwright` | `cli` | Navegador headless para cargar la página. |
 | `@axe-core/playwright` | `cli` | Inyecta y ejecuta axe-core en la página; trae su propia versión de axe-core (4.13). |
 | `@types/node` | raíz (dev) | Tipos de Node para la CLI. |
+
+**Dependencias de la fase 3**
+
+| Dependencia | Dónde | Motivo |
+| --- | --- | --- |
+| `openai` | `core` | Cliente para cualquier endpoint compatible con OpenAI (Groq, OpenRouter, Ollama). Fijado a 7.28.0: pnpm rechaza por defecto versiones publicadas hace menos de un día y la 7.30.0 lo era; se mantiene esa protección en lugar de añadir una excepción. |
+
+La regla `complexity/useLiteralKeys` de Biome está desactivada porque contradice a
+`noPropertyAccessFromIndexSignature` de TypeScript, que es la más estricta de las dos.
 
 pnpm solo permite scripts de instalación a `esbuild` y `workerd` (los necesita Wrangler); está
 declarado en `pnpm-workspace.yaml`.
@@ -325,6 +403,13 @@ la validación con zod y el reintento son obligatorios.
 - Estimación propia, pendiente de medir en 3b: unas 20–40 auditorías/día por tiempo de navegador y
   10–15 con parches por neurons con un modelo de 70B.
 
+**Límites de los proveedores LLM vistos en la fase 3 (2026-10-07).** Groq, nivel gratuito,
+`openai/gpt-oss-120b`: 8.000 tokens por minuto. Una auditoría con `--fix` de una página del sitio
+de ejemplo consume entre 9.000 y 14.000 tokens en 12–14 llamadas, así que dos auditorías seguidas
+chocan con el límite; por eso el esfuerzo de razonamiento va en `low` y el cliente reintenta
+hasta 4 veces con backoff. Si aun así se agota, se entrega la auditoría con las sugerencias
+obtenidas hasta ese momento.
+
 ## 8. Seguridad y privacidad
 
 - **SSRF.** Ver ADR-003. Tests específicos: IPv4 e IPv6 privadas, `localhost`,
@@ -345,6 +430,20 @@ la validación con zod y el reintento son obligatorios.
 - **Cadena de suministro.** Acciones de GitHub fijadas por SHA, `permissions: contents: read`
   por defecto, versiones exactas de dependencias y scripts de instalación en lista blanca.
 
+**Implementado en la fase 3**
+
+- El contenido de la página viaja codificado como JSON dentro del mensaje de usuario, en los
+  campos `element` y `page`; no puede cerrar un delimitador ni aparecer en las instrucciones.
+  Longitudes limitadas: 2.000 caracteres de marcado, 600 del resumen de axe, 200 del título.
+- Un parche inyectado por una página maliciosa no gana nada: se aplica dentro de la misma página
+  no confiable, en un contexto de navegador desechable, se interpreta en un `<template>` (los
+  scripts que traiga no se ejecutan) y solo se etiqueta como verificado si axe lo confirma.
+- La salida del modelo se trata igual que el contenido de la página: se escapa en Markdown y
+  HTML y se le quitan los caracteres de control en el formato de terminal.
+- Con `--fix` la CLI avisa por stderr de que el marcado de la página se envía al proveedor
+  elegido, y lo dice también la ayuda.
+- Los mensajes de error del proveedor no se copian al informe (pueden identificar la cuenta).
+
 ## 9. Limitaciones conocidas
 
 - Las pruebas automáticas detectan solo una parte de los problemas WCAG; el resto exige revisión
@@ -353,6 +452,15 @@ la validación con zod y el reintento son obligatorios.
 - "Verificado" significa que axe ya no informa de la regla en el DOM parcheado, no que el arreglo
   sea el mejor ni que el texto alternativo generado sea correcto.
 - Los parches se aplican al DOM renderizado, no al código fuente.
+- Un parche cambia un único elemento. Los arreglos que requieren tocar otro (añadir `<title>`
+  para `document-title`, asociar un `<label>` que está en otra parte) quedan sin verificar.
+- Hay una sugerencia por grupo, probada sobre su primer elemento; los demás elementos del grupo
+  comparten la explicación, pero su parche concreto puede diferir (otro texto alternativo).
+- Los elementos dentro de iframes o shadow DOM reciben explicación y parche sin verificar.
+- Para contraste y tamaño de objetivo el modelo suele proponer estilos en línea: pasan la
+  verificación, pero lo correcto en un proyecto real es cambiar la hoja de estilos.
+- El modelo no ve las imágenes: los textos alternativos son suposiciones a partir del contexto
+  (nombre del fichero, texto cercano) y hay que revisarlos siempre.
 - El DNS rebinding no se puede descartar por completo (ADR-003).
 - La demo pública tiene cuota diaria y puede no estar disponible al agotarse.
 - SARIF no apunta al código fuente original (ADR-008).
@@ -366,6 +474,12 @@ la validación con zod y el reintento son obligatorios.
 
 ## 10. Resultados de evals
 
+**Observación preliminar, no es una eval.** Una sola ejecución por página sobre el sitio de
+ejemplo el 2026-10-07 con Groq `openai/gpt-oss-120b`: `index.html` 12 parches verificados de 12
+grupos, `forms.html` 11 de 11, `media.html` 7 de 9 (fallaron `document-title`, por la limitación
+de un solo elemento, y `definition-list`). Son tres páginas escritas por nosotros y una única
+pasada: sirve para saber que el circuito funciona, no para comparar modelos.
+
 Pendiente (fase 4). Aquí se incluirá la tabla generada en `docs/evals.md`: % de parches
 verificados, % que introducen nuevas violaciones, latencia, tokens y coste por modelo.
 
@@ -375,7 +489,7 @@ verificados, % que introducen nuevas violaciones, latencia, tokens y coste por m
 | --- | --- | --- |
 | 1 | Esqueleto del monorepo, CI, `CLAUDE.md`, `docs/IDEA.md`, `fixtures/broken-site`, despliegue en Pages | Hecha (CI y despliegue verificados el 2026-10-07) |
 | 2 | Core + CLI: auditoría con axe, salidas JSON / Markdown / HTML / SARIF, sin LLM | Hecha (2026-10-07) |
-| 3 | Capa LLM, verificación de parches y caché | Pendiente |
+| 3 | Capa LLM, verificación de parches y caché | Hecha (2026-10-07). Pendiente para más adelante: parches que tocan más de un elemento |
 | 3b | `apps/api`: empieza con un spike que mide la CPU de Playwright en Workers; después anti-SSRF, Turnstile, rate limit, Browser Rendering, Workers AI, KV, presupuesto | Pendiente |
 | 4 | Evals y tabla comparativa | Pendiente |
 | 5 | Web: demo, auditar URL, pegar HTML, ver informe, BYOK | Pendiente |
@@ -402,3 +516,10 @@ verificados, % que introducen nuevas violaciones, latencia, tokens y coste por m
 | 2026-10-07 | E2e de la CLI con Vitest en lugar de Playwright Test; resolución de paquetes desde el código fuente (ADR-011). Sustituye a las project references previstas. |
 | 2026-10-07 | SARIF sin `security-severity`: los problemas de accesibilidad no son alertas de seguridad. |
 | 2026-10-07 | Catálogo del sitio de ejemplo validado con axe real y convertido en oráculo exacto de los tests (`fixtures/broken-site.expected.json`). |
+| 2026-10-07 | Fase 3: capa LLM con interfaz mínima y SDK `openai`; el modelo no devuelve criterio WCAG, impacto ni `before` (ADR-012). |
+| 2026-10-07 | Parches sobre el marcado vivo, con modo "solo el elemento" para elementos grandes o estructurales; un intento y un reintento por grupo (ADR-013). |
+| 2026-10-07 | Caché por SHA-256 del modelo y el prompt completo; la verificación nunca se cachea (ADR-014). |
+| 2026-10-07 | Nuevo workspace `packages/page-scripts` para el código que se ejecuta dentro de la página. |
+| 2026-10-07 | Formato `text` nuevo y por defecto en la CLI; Markdown pasa a pedirse con `--format`. Tablas resumen con una fila por regla. Fragmentos sin el sangrado del fichero original. |
+| 2026-10-07 | `--fix` sin proveedor configurado es un error inmediato; `--model`, `--provider`, `--max-llm-calls` y `--no-cache` sin `--fix` se rechazan en vez de ignorarse. |
+| 2026-10-07 | El informe HTML deja de marcar cada grupo como región con nombre: dos grupos de la misma regla generaban landmarks duplicados (detectado al auditar el propio informe). |

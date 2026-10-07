@@ -17,3 +17,6 @@ playwright-report/
 test-results/
 .DS_Store
 *.log
+
+# Local LLM response cache of the CLI
+.allytic/

@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@allytic/core": "workspace:*",
+    "@allytic/page-scripts": "workspace:*",
     "@axe-core/playwright": "4.13.0",
     "playwright": "1.63.0"
   },

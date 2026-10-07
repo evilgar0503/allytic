@@ -36,7 +36,7 @@ function ruleIds(groups: AuditReport["groups"]): string[] {
   return [...new Set(groups.map((group) => group.rule.id))].sort();
 }
 
-async function runCli(argv: string[]) {
+async function runCli(argv: string[], env: Record<string, string> = {}, cwd = repoRoot) {
   let stdout = "";
   let stderr = "";
   const exitCode = await main(argv, {
@@ -46,7 +46,8 @@ async function runCli(argv: string[]) {
     stderr: (text) => {
       stderr += text;
     },
-    cwd: repoRoot,
+    cwd,
+    env,
   });
   return { exitCode, stdout, stderr };
 }
@@ -79,13 +80,26 @@ describe("auditing the broken-site fixture over HTTP", () => {
 });
 
 describe("the allytic command", () => {
-  it("audits a local file and prints Markdown to stdout", async () => {
+  it("audits a local file and prints a plain-text report to stdout", async () => {
     const { exitCode, stdout, stderr } = await runCli(["audit", "fixtures/broken-site/index.html"]);
 
     expect(exitCode).toBe(EXIT_OK);
-    expect(stdout).toMatch(/^# Allytic accessibility report/);
-    expect(stdout).toContain("Images must have alternative text");
+    expect(stdout).toMatch(/^Allytic accessibility report\nTarget: {2}file:/);
+    expect(stdout).toContain("CRITICAL  Images must have alternative text");
+    expect(stdout).toContain("Note: Automated testing only detects part");
     expect(stderr).toMatch(/allytic: \d+ issues in \d+ rules/);
+    // No model is involved unless --fix is passed.
+    expect(stdout).not.toContain("AI");
+    expect(stderr).not.toContain("asking");
+  });
+
+  it("prints Markdown when asked, with one summary row per rule", async () => {
+    const { stdout } = await runCli(["audit", "fixtures/broken-site/index.html", "-f", "markdown"]);
+    expect(stdout).toMatch(/^# Allytic accessibility report/);
+    // The two contrast groups (different markup) are a single row in the summary table.
+    expect(
+      stdout.match(/^\| Serious \| Elements must meet minimum color contrast.*\| 2 \|$/gm),
+    ).toHaveLength(1);
   });
 
   it("writes every requested format into --output-dir", async () => {
@@ -93,14 +107,14 @@ describe("the allytic command", () => {
       "audit",
       "fixtures/broken-site/forms.html",
       "--format",
-      "json,markdown,html,sarif",
+      "text,json,markdown,html,sarif",
       "--output-dir",
       outputDirectory,
     ]);
 
     expect(exitCode).toBe(EXIT_OK);
     expect(stdout).toBe("");
-    expect(stderr.match(/allytic: wrote /g)).toHaveLength(4);
+    expect(stderr.match(/allytic: wrote /g)).toHaveLength(5);
 
     const report = parseAuditReport(
       JSON.parse(readFileSync(join(outputDirectory, "allytic-report.json"), "utf8")),

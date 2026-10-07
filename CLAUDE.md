@@ -23,12 +23,14 @@ Requisitos: Node 24 (`.nvmrc`), pnpm vía corepack (`corepack enable`) y Chromiu
 | `pnpm build` | Compila cada workspace a `dist/` |
 | `pnpm --filter @allytic/core test` | Tests de un solo workspace |
 | `pnpm build && node packages/cli/dist/bin.js audit <url|archivo>` | Ejecutar la CLI en local |
+| `node packages/cli/dist/bin.js audit <url|archivo> --fix` | Lo mismo con explicaciones y parches verificados (necesita `GROQ_API_KEY` u `OPENROUTER_API_KEY` en `.env`) |
 | `pnpm exec wrangler pages deploy fixtures/broken-site --project-name=allytic-broken-site` | Despliegue manual del sitio de ejemplo (lo normal es que lo haga la CI) |
 
 ## Estructura
 
 - `packages/core`: dominio, normalización, LLM, verificación. **Sin dependencias de Node ni del DOM** en la API pública.
 - `packages/cli`, `packages/action`: adaptadores de Node.
+- `packages/page-scripts`: funciones que se ejecutan dentro de la página auditada (`page.evaluate`). Cada una debe ser autocontenida: sin imports ni referencias a nada declarado fuera de su cuerpo.
 - `apps/api`: Cloudflare Worker. `apps/web`: SPA Vite + React.
 - `fixtures/broken-site`: sitio roto a propósito. No "arreglar" su HTML; está excluido de Biome.
   Si cambias un defecto, actualiza `fixtures/broken-site.expected.json` (oráculo de los e2e) y su README.
@@ -43,7 +45,10 @@ Requisitos: Node 24 (`.nvmrc`), pnpm vía corepack (`corepack enable`) y Chromiu
 - Entradas externas (salida del LLM, peticiones HTTP, mensajes `postMessage`, JSON de informes) validadas con zod.
 - Tests junto al código: `foo.ts` → `foo.test.ts`. Helpers de test en `src/testing/` (excluido del build).
 - Los paquetes del workspace se importan por nombre (`@allytic/core`); typecheck y tests los resuelven desde `src/`, el build desde `dist/`.
-- Todo texto que venga de la página auditada se escapa antes de escribirlo en Markdown o HTML.
+- Todo texto que venga de la página auditada **o del modelo** se escapa antes de escribirlo en Markdown, HTML o la terminal.
+- El contenido de la página solo entra en los prompts como datos JSON del mensaje de usuario, nunca en las instrucciones.
+- Los tests no llaman a proveedores reales: usan `src/testing/mock-llm-server.ts` o un proveedor falso. Las respuestas reales capturadas viven en `packages/core/src/testing/llm-responses.ts`.
+- Los mensajes de errores transitorios del proveedor LLM son genéricos: acaban en informes y el texto original puede identificar la cuenta.
 - Commits pequeños con Conventional Commits (`feat(core): …`, `fix(cli): …`, `docs: …`, `ci: …`, `chore: …`).
 - No añadir dependencias sin justificarlas en `docs/IDEA.md` (sección "Stack y por qué"). Versiones exactas.
 - Nada de secretos en el repo: solo `.env.example` y `.dev.vars.example`. Los reales van como secrets de Wrangler o de GitHub.
