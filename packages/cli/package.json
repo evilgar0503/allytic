@@ -5,6 +5,9 @@
   "description": "Command-line accessibility auditor",
   "license": "MIT",
   "type": "module",
+  "bin": {
+    "allytic": "./dist/bin.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -16,6 +19,15 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "tsc -p tsconfig.build.json"
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@allytic/core": "workspace:*",
+    "@axe-core/playwright": "4.13.0",
+    "playwright": "1.63.0"
+  },
+  "devDependencies": {
+    "zod": "4.6.5"
   }
 }

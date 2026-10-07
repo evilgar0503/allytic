@@ -3,8 +3,8 @@
 > Fuente de verdad del proyecto. Se actualiza en el mismo commit que cualquier cambio de
 > funcionalidad, arquitectura, stack, alcance, límites o decisiones (ver `CLAUDE.md`).
 >
-> Estado: **fase 1 completada** (esqueleto, CI, documentación y sitio de ejemplo desplegado en
-> <https://allytic-broken-site.pages.dev>).
+> Estado: **fase 2 completada** (core + CLI: auditoría con axe e informes JSON, Markdown, HTML y
+> SARIF, sin LLM). Sitio de ejemplo en <https://allytic-broken-site.pages.dev>.
 > Última revisión: 2026-10-07.
 
 ## 1. Visión y problema
@@ -42,6 +42,21 @@ nunca afirma "cumplimiento" ni "conformidad legal", y lo dice en la interfaz y e
 - Web con modos demo, auditar URL, pegar HTML (100 % cliente), ver informe y BYOK.
 - Evals reproducibles que comparan modelos gratuitos.
 - GitHub Action que sube SARIF y comenta el PR.
+
+**Auditar URLs de terceros es un objetivo del producto**
+
+El objetivo final es que cualquiera pueda introducir una URL pública, también de un sitio que no
+es suyo, y auditarla. Lo que se limita a `fixtures/broken-site` son solo los **ejemplos
+precalculados** que la web enseña por defecto. Consecuencias que se tienen en cuenta desde ya:
+
+- La CLI acepta cualquier URL http(s) sin restricciones: se ejecuta en la máquina de quien la usa.
+- La API (fase 3b) acepta cualquier URL pública, y por eso la protección anti-SSRF, Turnstile, el
+  rate limit y el presupuesto diario son requisitos, no extras.
+- Los resultados de sitios de terceros se devuelven a quien los pide y se cachean 24 h, pero no
+  se listan, no se indexan y no se publican como ejemplos.
+- Nada de inicio de sesión ni de formularios: solo se carga la página pública, una vez.
+- Los informes dicen siempre que no son una declaración de conformidad; eso importa más aún
+  cuando el sitio auditado es de otra persona.
 
 **Siguiente**
 
@@ -201,6 +216,54 @@ Monorepo pnpm con TypeScript estricto:
 - **Consecuencias.** Las alertas no apuntan al código fuente original. Documentado en
   limitaciones.
 
+### ADR-009 · Diseño de la CLI (fase 2)
+
+- **Contexto.** La CLI la usan personas en una terminal y también la Action, que necesita varios
+  formatos de una sola ejecución del navegador.
+- **Decisión.**
+  - `allytic audit <url|archivo>`; `--format` repetible o con comas; un formato va a stdout o a
+    `--output`, varios exigen `--output-dir` (`allytic-report.<ext>`).
+  - El informe va a stdout y el estado a stderr, para poder encadenar con tuberías.
+  - Códigos de salida: 0 auditoría completada, 1 umbral de `--fail-on` alcanzado, 2 error de uso
+    o de ejecución. Sin `--fail-on` encontrar problemas no es un fallo.
+  - Se ejecutan las reglas WCAG 2.2 A y AA de axe **más** las de buenas prácticas, etiquetadas
+    como tales; `--wcag-only` las excluye.
+  - Una respuesta HTTP ≥ 400 aborta con error: auditar una página de error daría un informe
+    engañoso.
+  - Las comprobaciones que axe no puede decidir ("incomplete") se muestran aparte como
+    "necesita revisión manual" y no cuentan como problemas ni para `--fail-on`.
+  - `--fix`, `--model`, `--provider` y `--max-llm-calls` no existen todavía: llegan en la fase 3
+    y hasta entonces se rechazan como opción desconocida, en vez de aceptarse sin efecto.
+- **Alternativas.** Un subcomando por formato; salida a fichero por defecto (peor para tuberías).
+- **Consecuencias.** Los formateadores viven en `core` como funciones puras de texto, así la web
+  podrá reutilizarlos en "Ver informe".
+
+### ADR-010 · Informe propio, agrupación y esquema versionado
+
+- **Contexto.** La salida de axe es grande, depende del DOM en sus tipos y no agrupa.
+- **Decisión.** `core` valida con zod solo la parte de axe que usa (sin importar los tipos de
+  axe-core) y la convierte en un informe propio con `schemaVersion: 1`. Los hallazgos se agrupan
+  por regla y **patrón de marcado** (etiqueta + nombres de atributos ordenados, más el valor de
+  `role` y `type`), que será la unidad de llamada al LLM. Cada hallazgo tiene un id estable
+  (FNV-1a de regla + selector + HTML) que sirve de huella en SARIF. El HTML de cada nodo se trunca
+  a 600 caracteres.
+- **Alternativas.** Reexportar el JSON de axe (acopla consumidores a axe); agrupar solo por regla
+  (mezcla arreglos distintos en una misma explicación).
+- **Consecuencias.** Todo lo que procede de la página auditada se escapa en Markdown y HTML; hay
+  tests con marcado hostil. El informe HTML no lleva scripts ni recursos externos y se audita a sí
+  mismo en los tests.
+
+### ADR-011 · Tests e2e de la CLI con Vitest y resolución desde el código fuente
+
+- **Contexto.** El plan pedía Playwright Test para e2e. La CLI no es una interfaz de navegador:
+  su e2e consiste en ejecutar el comando y examinar salida y ficheros.
+- **Decisión.** Los e2e de la CLI son tests de Vitest que levantan un servidor estático local con
+  `fixtures/broken-site` y ejecutan la CLI real con Chromium. Playwright Test se reserva para la
+  web (fase 5). Los paquetes del workspace se resuelven desde `src/` en typecheck y tests mediante
+  la condición de exportación `@allytic/source`; el build usa `dist/`.
+- **Consecuencias.** `pnpm check` no depende del orden de compilación. Los tests exigen tener
+  Chromium instalado (`playwright install chromium`), también en CI.
+
 ## 6. Stack y por qué
 
 | Pieza | Elección | Motivo |
@@ -218,6 +281,15 @@ Monorepo pnpm con TypeScript estricto:
 **Dependencias de la fase 1** (todas de desarrollo, en la raíz): `typescript`,
 `@biomejs/biome`, `vitest`, `wrangler`, `@changesets/cli`. Cualquier dependencia nueva se
 justifica aquí antes de añadirse.
+
+**Dependencias de la fase 2**
+
+| Dependencia | Dónde | Motivo |
+| --- | --- | --- |
+| `zod` | `core` (y dev en `cli` para tests) | Validar la salida de axe y los informes cargados desde disco. |
+| `playwright` | `cli` | Navegador headless para cargar la página. |
+| `@axe-core/playwright` | `cli` | Inyecta y ejecuta axe-core en la página; trae su propia versión de axe-core (4.13). |
+| `@types/node` | raíz (dev) | Tipos de Node para la CLI. |
 
 pnpm solo permite scripts de instalación a `esbuild` y `workerd` (los necesita Wrangler); está
 declarado en `pnpm-workspace.yaml`.
@@ -284,8 +356,13 @@ la validación con zod y el reintento son obligatorios.
 - El DNS rebinding no se puede descartar por completo (ADR-003).
 - La demo pública tiene cuota diaria y puede no estar disponible al agotarse.
 - SARIF no apunta al código fuente original (ADR-008).
-- El catálogo de `fixtures/broken-site/README.md` es una especificación de lo esperado; se
-  contrasta con la salida real de axe en la fase 2.
+- SARIF no conoce la línea del código fuente: axe trabaja sobre el DOM, así que todas las alertas
+  apuntan a la línea 1 del fichero o a la URL.
+- La CLI audita una sola página por ejecución y solo el estado inicial tras la carga: no
+  interactúa, no inicia sesión y no espera a contenido que aparezca más tarde.
+- Un `placeholder` basta para que axe dé por nombrado un campo, y los ids duplicados usados en
+  ARIA quedan como "necesita revisión": dos ejemplos reales, vistos al validar el sitio de
+  ejemplo, de lo que la detección automática deja pasar.
 
 ## 10. Resultados de evals
 
@@ -297,7 +374,7 @@ verificados, % que introducen nuevas violaciones, latencia, tokens y coste por m
 | Fase | Contenido | Estado |
 | --- | --- | --- |
 | 1 | Esqueleto del monorepo, CI, `CLAUDE.md`, `docs/IDEA.md`, `fixtures/broken-site`, despliegue en Pages | Hecha (CI y despliegue verificados el 2026-10-07) |
-| 2 | Core + CLI: auditoría con axe, salidas JSON / Markdown / HTML / SARIF, sin LLM | Pendiente |
+| 2 | Core + CLI: auditoría con axe, salidas JSON / Markdown / HTML / SARIF, sin LLM | Hecha (2026-10-07) |
 | 3 | Capa LLM, verificación de parches y caché | Pendiente |
 | 3b | `apps/api`: empieza con un spike que mide la CPU de Playwright en Workers; después anti-SSRF, Turnstile, rate limit, Browser Rendering, Workers AI, KV, presupuesto | Pendiente |
 | 4 | Evals y tabla comparativa | Pendiente |
@@ -319,3 +396,9 @@ verificados, % que introducen nuevas violaciones, latencia, tokens y coste por m
 | 2026-10-07 | Node 24 LTS, pnpm 12, TypeScript 7, Biome 2 y Vitest 5 como base. Sin project references de TypeScript por ahora: no hay imports entre paquetes; se añadirán en la fase 2. |
 | 2026-10-07 | El despliegue del sitio de ejemplo incluye un smoke test que lee la URL del fichero de salida de Wrangler y espera al certificado TLS. |
 | 2026-10-07 | El sitio de ejemplo se sirve sin CSP para no interferir con la inyección de axe; no contiene scripts. |
+| 2026-10-07 | Aclarado el alcance: auditar URLs públicas de terceros es objetivo del producto; solo los ejemplos precalculados se limitan al sitio propio (sección 3). |
+| 2026-10-07 | Diseño de la CLI: formatos, stdout/stderr, códigos de salida, buenas prácticas incluidas por defecto (ADR-009). |
+| 2026-10-07 | Informe propio con esquema versionado y agrupación por regla y patrón de marcado (ADR-010). |
+| 2026-10-07 | E2e de la CLI con Vitest en lugar de Playwright Test; resolución de paquetes desde el código fuente (ADR-011). Sustituye a las project references previstas. |
+| 2026-10-07 | SARIF sin `security-severity`: los problemas de accesibilidad no son alertas de seguridad. |
+| 2026-10-07 | Catálogo del sitio de ejemplo validado con axe real y convertido en oráculo exacto de los tests (`fixtures/broken-site.expected.json`). |

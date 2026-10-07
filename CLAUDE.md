@@ -9,7 +9,8 @@ TypeScript estricto, desplegado en el plan Free de Cloudflare. Coste 0 €, sin 
 
 ## Comandos
 
-Requisitos: Node 24 (`.nvmrc`) y pnpm vía corepack (`corepack enable`).
+Requisitos: Node 24 (`.nvmrc`), pnpm vía corepack (`corepack enable`) y Chromium para Playwright
+(`pnpm --filter allytic exec playwright install chromium`, una vez).
 
 | Comando | Qué hace |
 | --- | --- |
@@ -21,6 +22,7 @@ Requisitos: Node 24 (`.nvmrc`) y pnpm vía corepack (`corepack enable`).
 | `pnpm test` | Vitest en los workspaces que tienen tests |
 | `pnpm build` | Compila cada workspace a `dist/` |
 | `pnpm --filter @allytic/core test` | Tests de un solo workspace |
+| `pnpm build && node packages/cli/dist/bin.js audit <url|archivo>` | Ejecutar la CLI en local |
 | `pnpm exec wrangler pages deploy fixtures/broken-site --project-name=allytic-broken-site` | Despliegue manual del sitio de ejemplo (lo normal es que lo haga la CI) |
 
 ## Estructura
@@ -29,6 +31,7 @@ Requisitos: Node 24 (`.nvmrc`) y pnpm vía corepack (`corepack enable`).
 - `packages/cli`, `packages/action`: adaptadores de Node.
 - `apps/api`: Cloudflare Worker. `apps/web`: SPA Vite + React.
 - `fixtures/broken-site`: sitio roto a propósito. No "arreglar" su HTML; está excluido de Biome.
+  Si cambias un defecto, actualiza `fixtures/broken-site.expected.json` (oráculo de los e2e) y su README.
 - `evals/`: dataset y script de comparación de modelos.
 - `docs/IDEA.md`: visión, ADRs, límites, roadmap y changelog de decisiones.
 
@@ -38,7 +41,9 @@ Requisitos: Node 24 (`.nvmrc`) y pnpm vía corepack (`corepack enable`).
 - ESM en todo el repo; imports relativos con extensión `.js`; `import type` para tipos.
 - Errores tipados (clases o uniones discriminadas) con mensajes útiles para quien usa la CLI o la API.
 - Entradas externas (salida del LLM, peticiones HTTP, mensajes `postMessage`, JSON de informes) validadas con zod.
-- Tests junto al código: `foo.ts` → `foo.test.ts`.
+- Tests junto al código: `foo.ts` → `foo.test.ts`. Helpers de test en `src/testing/` (excluido del build).
+- Los paquetes del workspace se importan por nombre (`@allytic/core`); typecheck y tests los resuelven desde `src/`, el build desde `dist/`.
+- Todo texto que venga de la página auditada se escapa antes de escribirlo en Markdown o HTML.
 - Commits pequeños con Conventional Commits (`feat(core): …`, `fix(cli): …`, `docs: …`, `ci: …`, `chore: …`).
 - No añadir dependencias sin justificarlas en `docs/IDEA.md` (sección "Stack y por qué"). Versiones exactas.
 - Nada de secretos en el repo: solo `.env.example` y `.dev.vars.example`. Los reales van como secrets de Wrangler o de GitHub.
