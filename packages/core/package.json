@@ -1,0 +1,22 @@
+{
+  "name": "@allytic/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Domain types, axe result normalization, LLM layer and patch verification",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run"
+  }
+}

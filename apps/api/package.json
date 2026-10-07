@@ -1,0 +1,21 @@
+{
+  "name": "@allytic/api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Cloudflare Worker that orchestrates URL audits",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json"
+  }
+}

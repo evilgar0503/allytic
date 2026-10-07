@@ -1,0 +1,8 @@
+# Copy to apps/api/.dev.vars (never committed). Read by `wrangler dev` from phase 3b on.
+# In production these are set with `wrangler secret put <NAME>`.
+
+GROQ_API_KEY=
+OPENROUTER_API_KEY=
+
+# Cloudflare Turnstile. This is the documented "always passes" test secret, safe for local dev.
+TURNSTILE_SECRET=1x0000000000000000000000000000000AA

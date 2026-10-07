@@ -1,0 +1,28 @@
+{
+  "name": "allytic-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "AI-assisted web accessibility auditor that verifies its own fixes",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@12.10.1",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r --if-present test",
+    "build": "pnpm -r build",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "changeset": "changeset"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@changesets/cli": "3.0.3",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3",
+    "wrangler": "4.148.0"
+  }
+}

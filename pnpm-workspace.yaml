@@ -1,0 +1,8 @@
+packages:
+  - "packages/*"
+  - "apps/*"
+
+# Only these dependencies may run install scripts (both are required by wrangler).
+allowBuilds:
+  esbuild: true
+  workerd: true
