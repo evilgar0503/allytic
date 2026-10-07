@@ -55,7 +55,11 @@ export function formatSarif(report: AuditReport, options: SarifOptions = {}): st
       ruleIndex: ruleIndex.get(finding.ruleId) ?? -1,
       level: LEVELS[finding.impact],
       message: {
-        text: `${group.rule.help} (${finding.impact}). Element: ${finding.selector}`,
+        text: [
+          `${group.rule.help} (${finding.impact}). Element: ${finding.selector}`,
+          // The explanation is AI-written; it is labelled so in the alert itself.
+          ...(group.suggestion ? [`AI explanation: ${group.suggestion.explanation}`] : []),
+        ].join(" "),
       },
       locations: [
         {

@@ -37,7 +37,7 @@ describe("normalizeRuleResults", () => {
 
   it("flattens selectors that cross frames and shadow roots", () => {
     const imageAlt = normalizeSample().violations[1];
-    expect(imageAlt?.findings[2]?.selector).toBe("iframe#shop > x-card >>> img.hero");
+    expect(imageAlt?.findings[2]?.selector).toBe("iframe#shop >> x-card >>> img.hero");
   });
 
   it("normalizes missing failure summaries to null and trims the others", () => {

@@ -1,5 +1,14 @@
-import type { AuditReport, FindingGroup } from "../report-schema.js";
-import { capitalize, instancesLabel, summaryLine, wcagLabel } from "./shared.js";
+import type { AuditReport, FindingGroup, Suggestion } from "../report-schema.js";
+import {
+  aiNotice,
+  capitalize,
+  instancesLabel,
+  patchScopeNote,
+  ruleRows,
+  summaryLine,
+  verificationLabel,
+  wcagLabel,
+} from "./shared.js";
 
 /** Elements listed per group; the JSON report always has all of them. */
 const MAX_ELEMENTS_PER_GROUP = 5;
@@ -12,18 +21,49 @@ function escapeInline(text: string): string {
     .trim();
 }
 
+function longestBacktickRun(code: string): number {
+  return Math.max(0, ...(code.match(/`+/g) ?? []).map((run) => run.length));
+}
+
 /** Wraps code in a fence longer than any backtick run it contains, so it cannot break out. */
-function codeBlock(code: string, language: string): string {
-  const longestRun = Math.max(0, ...(code.match(/`+/g) ?? []).map((run) => run.length));
-  const fence = "`".repeat(Math.max(3, longestRun + 1));
-  return `${fence}${language}\n${code}\n${fence}`;
+function codeBlock(code: string, language: string, indent = ""): string {
+  const fence = "`".repeat(Math.max(3, longestBacktickRun(code) + 1));
+  return [`${fence}${language}`, ...code.split("\n"), fence]
+    .map((line) => `${indent}${line}`.trimEnd())
+    .join("\n");
 }
 
 function inlineCode(code: string): string {
-  const longestRun = Math.max(0, ...(code.match(/`+/g) ?? []).map((run) => run.length));
-  const fence = "`".repeat(longestRun + 1);
+  const fence = "`".repeat(longestBacktickRun(code) + 1);
   const padding = code.startsWith("`") || code.endsWith("`") ? " " : "";
   return `${fence}${padding}${code.replace(/\s+/g, " ")}${padding}${fence}`;
+}
+
+function suggestionSection(suggestion: Suggestion): string[] {
+  const lines = [
+    `**Why it matters:** ${escapeInline(suggestion.explanation)}`,
+    "",
+    `**Who is affected:** ${escapeInline(suggestion.affects)}`,
+    "",
+  ];
+  const { patch } = suggestion;
+  if (patch) {
+    const { status, sentence } = verificationLabel(patch);
+    const note = patchScopeNote(patch);
+    lines.push(
+      `**Suggested fix for ${inlineCode(patch.selector)} — ${status}.** ${escapeInline(sentence)}${note ? ` ${note}` : ""}`,
+      "",
+      "Before:",
+      "",
+      codeBlock(patch.before, "html"),
+      "",
+      "After:",
+      "",
+      codeBlock(patch.after, "html"),
+      "",
+    );
+  }
+  return lines;
 }
 
 function groupSection(group: FindingGroup): string {
@@ -37,13 +77,13 @@ function groupSection(group: FindingGroup): string {
     "",
   ];
 
+  if (group.suggestion) lines.push(...suggestionSection(group.suggestion));
+
   for (const finding of findings.slice(0, MAX_ELEMENTS_PER_GROUP)) {
-    lines.push(`- ${inlineCode(finding.selector)}`, "");
     lines.push(
-      codeBlock(finding.htmlTruncated ? `${finding.html}…` : finding.html, "html")
-        .split("\n")
-        .map((line) => `  ${line}`)
-        .join("\n"),
+      `- ${inlineCode(finding.selector)}`,
+      "",
+      codeBlock(finding.htmlTruncated ? `${finding.html}…` : finding.html, "html", "  "),
       "",
     );
   }
@@ -55,6 +95,7 @@ function groupSection(group: FindingGroup): string {
 
 export function formatMarkdown(report: AuditReport): string {
   const { summary, target } = report;
+  const notice = aiNotice(report);
   const lines = [
     "# Allytic accessibility report",
     "",
@@ -64,6 +105,7 @@ export function formatMarkdown(report: AuditReport): string {
     "",
     `> ${report.disclaimer}`,
     "",
+    ...(notice ? [`> ${notice}`, ""] : []),
     "## Summary",
     "",
     `${capitalize(summaryLine(report))}.`,
@@ -74,9 +116,9 @@ export function formatMarkdown(report: AuditReport): string {
     lines.push(
       "| Impact | Issue | WCAG | Elements |",
       "| --- | --- | --- | ---: |",
-      ...report.groups.map(
-        (group) =>
-          `| ${capitalize(group.impact)} | ${escapeInline(group.rule.help)} | ${wcagLabel(group.rule)} | ${group.findings.length} |`,
+      ...ruleRows(report.groups).map(
+        (row) =>
+          `| ${capitalize(row.impact)} | ${escapeInline(row.rule.help)} | ${wcagLabel(row.rule)} | ${row.elements} |`,
       ),
       "",
       "## Issues",

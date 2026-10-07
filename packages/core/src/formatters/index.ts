@@ -4,6 +4,7 @@ import { formatJson } from "./json.js";
 import { formatMarkdown } from "./markdown.js";
 import { formatSarif, type SarifOptions } from "./sarif.js";
 import type { ReportFormat } from "./shared.js";
+import { formatText } from "./text.js";
 
 export interface FormatOptions {
   sarif?: SarifOptions;
@@ -15,6 +16,8 @@ export function formatReport(
   options: FormatOptions = {},
 ): string {
   switch (format) {
+    case "text":
+      return formatText(report);
     case "json":
       return formatJson(report);
     case "markdown":
@@ -33,4 +36,4 @@ export {
   type ReportFormat,
   summaryLine,
 } from "./shared.js";
-export { formatHtml, formatJson, formatMarkdown, formatSarif, type SarifOptions };
+export { formatHtml, formatJson, formatMarkdown, formatSarif, formatText, type SarifOptions };

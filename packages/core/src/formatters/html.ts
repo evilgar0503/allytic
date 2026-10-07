@@ -1,5 +1,15 @@
-import type { AuditReport, Finding, FindingGroup } from "../report-schema.js";
-import { capitalize, instancesLabel, summaryLine, wcagLabel } from "./shared.js";
+import type { Impact } from "../impact.js";
+import type { AuditReport, Finding, FindingGroup, Suggestion } from "../report-schema.js";
+import {
+  aiNotice,
+  capitalize,
+  instancesLabel,
+  patchScopeNote,
+  ruleRows,
+  summaryLine,
+  verificationLabel,
+  wcagLabel,
+} from "./shared.js";
 
 const ESCAPES: Record<string, string> = {
   "&": "&amp;",
@@ -26,10 +36,10 @@ function safeLink(url: string, label: string): string {
 // are no keyboard-inaccessible scroll regions.
 const STYLES = `
 :root { color-scheme: light dark; --fg: #1b1b1f; --bg: #ffffff; --muted: #55555e; --border: #c4c4cc;
-  --surface: #f4f4f7; --link: #0b57d0; --critical: #a30000; --serious: #8a3b00; --moderate: #5c5200; --minor: #3d4a5c; }
+  --surface: #f4f4f7; --link: #0b57d0; --critical: #a30000; --serious: #8a3b00; --moderate: #5c5200; --minor: #3d4a5c; --verified: #0b5c2e; }
 @media (prefers-color-scheme: dark) {
   :root { --fg: #ececf1; --bg: #16161a; --muted: #b4b4c0; --border: #55555e; --surface: #222228;
-    --link: #9fc2ff; --critical: #ffb3b3; --serious: #ffc48a; --moderate: #f0e08a; --minor: #c3cfdf; }
+    --link: #9fc2ff; --critical: #ffb3b3; --serious: #ffc48a; --moderate: #f0e08a; --minor: #c3cfdf; --verified: #8fe0ae; }
 }
 * { box-sizing: border-box; }
 body { margin: 0 auto; max-width: 60rem; padding: 1.5rem 1rem 3rem; font: 1rem/1.6 system-ui, sans-serif;
@@ -58,11 +68,41 @@ code, pre { font: 0.875rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, mo
 pre { margin: 0.25rem 0 0; padding: 0.5rem 0.75rem; background: var(--surface); border: 1px solid var(--border);
   border-radius: 0.25rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .selector { overflow-wrap: anywhere; }
+.suggestion { margin: 1rem 0; padding: 0.25rem 1rem 1rem; border-inline-start: 0.25rem solid var(--link); background: var(--surface); }
+.suggestion pre { background: var(--bg); }
+.suggestion h4 { margin: 1rem 0 0.25rem; font-size: 1rem; }
+.suggestion h5 { margin: 0.75rem 0 0; font-size: 0.875rem; }
+.status { font-weight: 700; }
+.status-verified { color: var(--verified); }
+.status-failed, .status-not-verifiable { color: var(--serious); }
 footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); }
 `;
 
-function impactBadge(group: FindingGroup): string {
-  return `<span class="impact impact-${group.impact}">${capitalize(group.impact)}</span>`;
+function impactBadge(impact: Impact): string {
+  return `<span class="impact impact-${impact}">${capitalize(impact)}</span>`;
+}
+
+function suggestionBlock(suggestion: Suggestion): string {
+  const { patch } = suggestion;
+  let fix = "";
+  if (patch) {
+    const { status, sentence } = verificationLabel(patch);
+    const note = patchScopeNote(patch);
+    fix = `
+  <h4>Suggested fix for <code class="selector">${escapeHtml(patch.selector)}</code></h4>
+  <p><span class="status status-${patch.verification.status}">${escapeHtml(status)}.</span> ${escapeHtml(sentence)}${note ? ` ${escapeHtml(note)}` : ""}</p>
+  <h5>Before</h5>
+  <pre><code>${escapeHtml(patch.before)}</code></pre>
+  <h5>After</h5>
+  <pre><code>${escapeHtml(patch.after)}</code></pre>`;
+  }
+  return `<div class="suggestion">
+  <h4>Why it matters</h4>
+  <p>${escapeHtml(suggestion.explanation)}</p>
+  <h4>Who is affected</h4>
+  <p>${escapeHtml(suggestion.affects)}</p>${fix}
+  <p class="muted">Written by ${escapeHtml(suggestion.model)}.</p>
+</div>`;
 }
 
 function findingItem(finding: Finding): string {
@@ -78,10 +118,13 @@ function findingItem(finding: Finding): string {
 
 function groupSection(group: FindingGroup): string {
   const { rule } = group;
-  return `<section class="group" aria-labelledby="group-${group.id}">
+  // Deliberately not a named region: a rule can have several groups with the same heading,
+  // and landmarks with identical names are an accessibility problem of their own.
+  return `<section class="group">
   <h3 id="group-${group.id}">${escapeHtml(rule.help)}</h3>
-  <p>${impactBadge(group)} · ${escapeHtml(wcagLabel(rule))} · ${instancesLabel(group)} · rule ${safeLink(rule.helpUrl, rule.id)}</p>
+  <p>${impactBadge(group.impact)} · ${escapeHtml(wcagLabel(rule))} · ${instancesLabel(group)} · rule ${safeLink(rule.helpUrl, rule.id)}</p>
   <p>${escapeHtml(rule.description)}</p>
+  ${group.suggestion ? suggestionBlock(group.suggestion) : ""}
   <ul class="elements">
 ${group.findings.map(findingItem).join("\n")}
   </ul>
@@ -89,13 +132,13 @@ ${group.findings.map(findingItem).join("\n")}
 }
 
 function summaryTable(report: AuditReport): string {
-  const rows = report.groups
+  const rows = ruleRows(report.groups)
     .map(
-      (group) => `<tr>
-  <td>${impactBadge(group)}</td>
-  <th scope="row"><a href="#group-${group.id}">${escapeHtml(group.rule.help)}</a></th>
-  <td>${escapeHtml(wcagLabel(group.rule))}</td>
-  <td class="count">${group.findings.length}</td>
+      (row) => `<tr>
+  <td>${impactBadge(row.impact)}</td>
+  <th scope="row"><a href="#group-${row.firstGroupId}">${escapeHtml(row.rule.help)}</a></th>
+  <td>${escapeHtml(wcagLabel(row.rule))}</td>
+  <td class="count">${row.elements}</td>
 </tr>`,
     )
     .join("\n");
@@ -129,6 +172,7 @@ ${items}
 export function formatHtml(report: AuditReport): string {
   const { target } = report;
   const hasFindings = report.summary.findings > 0;
+  const notice = aiNotice(report);
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -149,6 +193,7 @@ export function formatHtml(report: AuditReport): string {
 </header>
 <main>
   <p class="notice"><strong>Not a conformance statement.</strong> ${escapeHtml(report.disclaimer)}</p>
+  ${notice ? `<p class="notice"><strong>AI-generated content.</strong> ${escapeHtml(notice)}</p>` : ""}
   <h2>Summary</h2>
   <p>${escapeHtml(capitalize(summaryLine(report)))}.</p>
   ${hasFindings ? summaryTable(report) : ""}

@@ -55,6 +55,7 @@ export function buildReport(input: BuildReportInput): AuditReport {
     summary: summarize(groups, needsReview),
     groups,
     needsReview,
+    ai: null,
     disclaimer: DISCLAIMER,
   };
 }

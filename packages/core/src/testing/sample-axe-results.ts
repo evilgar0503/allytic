@@ -1,5 +1,33 @@
+export interface SampleNode {
+  html: string;
+  target: (string | string[])[];
+  impact?: string | null;
+  failureSummary?: string | null;
+}
+
+export interface SampleRuleResult {
+  id: string;
+  impact: string | null;
+  tags: string[];
+  description: string;
+  help: string;
+  helpUrl: string;
+  nodes: SampleNode[];
+}
+
+export interface SampleAxeResults {
+  testEngine: { name: string; version: string };
+  testRunner: { name: string };
+  url: string;
+  timestamp: string;
+  passes: { id: string; nodes: SampleNode[] }[];
+  violations: SampleRuleResult[];
+  incomplete: SampleRuleResult[];
+  inapplicable: SampleRuleResult[];
+}
+
 /** Hand-written axe-core output covering the shapes the normalizer has to deal with. */
-export function sampleAxeResults() {
+export function sampleAxeResults(): SampleAxeResults {
   return {
     testEngine: { name: "axe-core", version: "4.13.0" },
     testRunner: { name: "axe" },

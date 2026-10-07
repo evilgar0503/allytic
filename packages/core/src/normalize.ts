@@ -15,9 +15,34 @@ export interface RuleFindings {
   findings: Finding[];
 }
 
+/** Separators that cannot be mistaken for CSS combinators such as ">". */
+const FRAME_SEPARATOR = " >> ";
+const SHADOW_SEPARATOR = " >>> ";
+
 function selectorOf(target: AxeNode["target"]): string {
-  // Nested arrays mean "inside this shadow root"; separate arrays mean "inside this frame".
-  return target.map((part) => (typeof part === "string" ? part : part.join(" >>> "))).join(" > ");
+  // Nested arrays mean "inside this shadow root"; separate entries mean "inside this frame".
+  return target
+    .map((part) => (typeof part === "string" ? part : part.join(SHADOW_SEPARATOR)))
+    .join(FRAME_SEPARATOR);
+}
+
+function scopeOf(target: AxeNode["target"]): Finding["scope"] {
+  if (target.some((part) => typeof part !== "string")) return "shadow";
+  return target.length > 1 ? "frame" : "page";
+}
+
+/**
+ * Removes the indentation that the element had in its source file from every line but the
+ * first (which axe already trims), so that snippets read naturally in reports and prompts.
+ */
+export function dedent(html: string): string {
+  const [first, ...rest] = html.split("\n");
+  const indents = rest
+    .filter((line) => line.trim() !== "")
+    .map((line) => line.length - line.trimStart().length);
+  if (indents.length === 0) return html;
+  const common = Math.min(...indents);
+  return [first, ...rest.map((line) => line.slice(common))].join("\n");
 }
 
 function truncate(html: string): { html: string; htmlTruncated: boolean } {
@@ -56,7 +81,8 @@ export function normalizeRuleResults(results: readonly AxeRuleResult[]): RuleFin
           ruleId: result.id,
           impact: pickImpact(node.impact, result.impact),
           selector,
-          ...truncate(node.html),
+          scope: scopeOf(node.target),
+          ...truncate(dedent(node.html)),
           failureSummary: node.failureSummary?.trim() || null,
         };
       }),

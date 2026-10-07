@@ -71,6 +71,7 @@ export function groupFindings(ruleFindings: readonly RuleFindings[]): FindingGro
         impact: highestImpact(grouped),
         pattern,
         findings: grouped,
+        suggestion: null,
       });
     }
   }
