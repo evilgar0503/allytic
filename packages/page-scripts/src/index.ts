@@ -179,3 +179,95 @@ export function targetStillFails(args: TargetStillFailsArgs): boolean {
     }
   });
 }
+
+export interface RunAxeArgs {
+  /** axe rule tags to run, e.g. ["wcag2a", "wcag2aa"]. */
+  tags: string[];
+  /**
+   * When true, only what is needed to judge a patch is returned (rule ids and selectors),
+   * which keeps the message small for callers with a tight CPU budget.
+   */
+  lean: boolean;
+  /** Longer snippets are cut inside the page, before they travel anywhere. */
+  maxHtmlLength: number;
+}
+
+export interface CompactAxeNode {
+  html: string;
+  target: (string | string[])[];
+  impact: string | null;
+  failureSummary: string | null;
+}
+
+export interface CompactAxeRule {
+  id: string;
+  impact: string | null;
+  tags: string[];
+  description: string;
+  help: string;
+  helpUrl: string;
+  nodes: CompactAxeNode[];
+}
+
+/** The subset of axe-core's output that Allytic reads, in the shape `core` validates. */
+export interface CompactAxeResults {
+  testEngine: { name: string; version: string };
+  url: string;
+  timestamp: string;
+  violations: CompactAxeRule[];
+  incomplete: CompactAxeRule[];
+}
+
+/**
+ * Runs axe-core (which must already be loaded in the page as `window.axe`) and returns only
+ * violations and undecided checks, already trimmed. Used where the full axe output would be
+ * too expensive to send and parse: the API Worker and the web app's iframe.
+ */
+export async function runAxeInPage(args: RunAxeArgs): Promise<CompactAxeResults> {
+  // `window.axe` is injected at runtime and has no type here; every value read from it is
+  // converted explicitly below, and `core` validates the result again with zod.
+  const axe = Reflect.get(window, "axe");
+  if (!axe || typeof axe.run !== "function") {
+    throw new Error("axe-core is not loaded in this page");
+  }
+
+  const results = await axe.run(document, {
+    runOnly: { type: "tag", values: args.tags },
+    resultTypes: ["violations", "incomplete"],
+  });
+
+  const text = (value: unknown): string => (typeof value === "string" ? value : "");
+  const textOrNull = (value: unknown): string | null => (typeof value === "string" ? value : null);
+  const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+  const field = (value: unknown, key: string): unknown =>
+    typeof value === "object" && value !== null ? Reflect.get(value, key) : undefined;
+
+  const compactRules = (rules: unknown): CompactAxeRule[] =>
+    list(rules).map((rule) => ({
+      id: text(field(rule, "id")),
+      impact: textOrNull(field(rule, "impact")),
+      tags: args.lean ? [] : list(field(rule, "tags")).map(text),
+      description: args.lean ? "" : text(field(rule, "description")),
+      help: args.lean ? "" : text(field(rule, "help")),
+      helpUrl: args.lean ? "" : text(field(rule, "helpUrl")),
+      nodes: list(field(rule, "nodes")).map((node) => ({
+        html: args.lean ? "" : text(field(node, "html")).slice(0, args.maxHtmlLength),
+        target: list(field(node, "target")).map((part) =>
+          Array.isArray(part) ? part.map(text) : text(part),
+        ),
+        impact: textOrNull(field(node, "impact")),
+        failureSummary: args.lean ? null : textOrNull(field(node, "failureSummary")),
+      })),
+    }));
+
+  return {
+    testEngine: {
+      name: text(field(field(results, "testEngine"), "name")),
+      version: text(field(field(results, "testEngine"), "version")),
+    },
+    url: text(field(results, "url")),
+    timestamp: text(field(results, "timestamp")),
+    violations: compactRules(field(results, "violations")),
+    incomplete: compactRules(field(results, "incomplete")),
+  };
+}
