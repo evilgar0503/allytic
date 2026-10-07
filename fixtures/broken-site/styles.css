@@ -1,0 +1,72 @@
+/* Intentionally inaccessible in places. See README.md for the catalogue of defects. */
+body {
+  margin: 0 auto;
+  max-width: 60rem;
+  padding: 1rem;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+  color: #1a1a1a;
+  background: #fff;
+}
+
+.fixture-banner {
+  padding: 0.75rem 1rem;
+  border: 2px solid #7a0000;
+  background: #fff4f4;
+  color: #5c0000;
+  font-weight: 600;
+}
+
+nav ul {
+  display: flex;
+  gap: 1rem;
+  padding: 0;
+  list-style: none;
+}
+
+/* DEFECT (not detectable by axe): focus indicator removed everywhere. WCAG 2.4.7 */
+*:focus {
+  outline: none;
+}
+
+/* DEFECT color-contrast: 2.3:1 on white. WCAG 1.4.3 */
+.muted {
+  color: #aaaaaa;
+}
+
+/* DEFECT color-contrast: white on light yellow. */
+.badge {
+  padding: 0.125rem 0.5rem;
+  color: #ffffff;
+  background: #ffd84d;
+}
+
+.icon-button {
+  padding: 0.5rem;
+  border: 1px solid #555;
+  background: #fff;
+}
+
+/* DEFECT target-size: 12x12 px targets with no spacing. WCAG 2.5.8 */
+.pager a {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  font-size: 10px;
+  line-height: 12px;
+  overflow: hidden;
+}
+
+table {
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 0.25rem 0.75rem;
+  border: 1px solid #555;
+}
+
+.field {
+  margin-block: 1rem;
+}

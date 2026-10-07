@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Order — Harbor Coffee (intentionally broken demo site)</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <p class="fixture-banner">
+      This site is broken on purpose. It is a test fixture for the Allytic accessibility auditor
+      and is not a real business. The form does not submit anything.
+    </p>
+
+    <header>
+      <nav aria-label="Main">
+        <ul>
+          <li><a href="index.html">Home</a></li>
+          <li><a href="forms.html">Order</a></li>
+          <li><a href="media.html">Our story</a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <main>
+      <h1>Order ahead</h1>
+
+      <form action="#">
+        <!-- DEFECT label: text input with only a placeholder. -->
+        <div class="field">
+          <input type="text" name="name" placeholder="Your name" />
+        </div>
+
+        <!-- DEFECT autocomplete-valid: invalid autocomplete token. -->
+        <div class="field">
+          <label for="email">Email</label>
+          <input type="email" id="email" name="email" autocomplete="nope" />
+        </div>
+
+        <!-- DEFECT select-name: select without a label. -->
+        <div class="field">
+          <select name="size">
+            <option>Small</option>
+            <option>Medium</option>
+            <option>Large</option>
+          </select>
+        </div>
+
+        <!-- DEFECT aria-required-attr: role=checkbox without aria-checked. -->
+        <div class="field">
+          <span role="checkbox" tabindex="0" aria-label="Add oat milk">☐ Oat milk</span>
+        </div>
+
+        <!-- DEFECT aria-valid-attr-value: aria-expanded must be true or false. -->
+        <div class="field">
+          <button type="button" aria-expanded="yes">Allergen information</button>
+        </div>
+
+        <!-- DEFECT aria-roles: misspelled role. -->
+        <div class="field">
+          <div role="buton" tabindex="0">Apply promo code</div>
+        </div>
+
+        <!-- DEFECT duplicate-id-aria: two elements share an id referenced by aria-labelledby. -->
+        <div class="field">
+          <span id="pickup">Pickup time</span>
+          <span id="pickup">Pickup date</span>
+          <input type="time" name="time" aria-labelledby="pickup" />
+        </div>
+
+        <!-- DEFECT aria-hidden-focus: focusable control inside aria-hidden content. -->
+        <div class="field" aria-hidden="true">
+          <button type="button">Remove item</button>
+        </div>
+
+        <!-- DEFECT nested-interactive: link nested inside a button. -->
+        <div class="field">
+          <button type="submit">Place order or <a href="index.html">cancel</a></button>
+        </div>
+      </form>
+    </main>
+
+    <footer>
+      <p>Harbor Coffee is fictional. Fixture maintained by the Allytic project.</p>
+    </footer>
+  </body>
+</html>

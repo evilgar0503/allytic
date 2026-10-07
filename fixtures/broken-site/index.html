@@ -1,0 +1,78 @@
+<!doctype html>
+<!-- DEFECT html-has-lang: no lang attribute. -->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <!-- DEFECT meta-viewport: zoom disabled. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Harbor Coffee — intentionally broken demo site</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <p class="fixture-banner">
+      This site is broken on purpose. It is a test fixture for the Allytic accessibility auditor
+      and is not a real business.
+    </p>
+
+    <header>
+      <nav aria-label="Main">
+        <ul>
+          <li><a href="index.html">Home</a></li>
+          <li><a href="forms.html">Order</a></li>
+          <li><a href="media.html">Our story</a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <main>
+      <h1>Harbor Coffee</h1>
+
+      <!-- DEFECT heading-order: h1 followed by h4. -->
+      <h4>Freshly roasted every morning</h4>
+
+      <!-- DEFECT image-alt: informative image without alt. -->
+      <img src="img/beans.svg" width="320" height="180" />
+
+      <!-- DEFECT color-contrast: light grey on white. -->
+      <p class="muted">Open Monday to Saturday, 7:00 to 18:00. Closed on public holidays.</p>
+
+      <p>New this week: <span class="badge">Ethiopia Guji</span></p>
+
+      <!-- DEFECT link-name: link whose only content is a hidden icon. -->
+      <a href="https://example.com/social">
+        <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="10" />
+        </svg>
+      </a>
+
+      <!-- DEFECT button-name: icon-only button without accessible name. -->
+      <button type="button" class="icon-button">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16">
+          <path d="M2 4h12v2H2zm0 4h12v2H2zm0 4h12v2H2z" />
+        </svg>
+      </button>
+
+      <h2>Menu highlights</h2>
+
+      <!-- DEFECT list: ul with a non-li direct child. -->
+      <ul>
+        <div>Flat white</div>
+        <li>Cold brew</li>
+        <li>Cinnamon bun</li>
+      </ul>
+
+      <!-- DEFECT tabindex: positive tabindex breaks the focus order. -->
+      <a href="forms.html" tabindex="3">Order ahead</a>
+
+      <!-- DEFECT target-size: tiny adjacent targets. -->
+      <p class="pager">
+        <a href="?page=1">1</a><a href="?page=2">2</a><a href="?page=3">3</a>
+      </p>
+    </main>
+
+    <footer>
+      <p>Harbor Coffee is fictional. Fixture maintained by the Allytic project.</p>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,74 @@
+<!doctype html>
+<!-- DEFECT html-lang-valid: "xx-broken" is not a valid language tag. -->
+<html lang="xx-broken">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <!-- DEFECT document-title: no <title> element. -->
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <p class="fixture-banner">
+      This site is broken on purpose. It is a test fixture for the Allytic accessibility auditor
+      and is not a real business.
+    </p>
+
+    <header>
+      <nav aria-label="Main">
+        <ul>
+          <li><a href="index.html">Home</a></li>
+          <li><a href="forms.html">Order</a></li>
+          <li><a href="media.html">Our story</a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <main>
+      <h1>Our story</h1>
+
+      <!-- DEFECT marquee: moving content that cannot be paused. -->
+      <marquee>Two for one on Fridays!</marquee>
+
+      <!-- DEFECT frame-title: iframe without a title. -->
+      <iframe
+        srcdoc="&lt;!doctype html&gt;&lt;html lang='en'&gt;&lt;title&gt;Map&lt;/title&gt;&lt;p&gt;Map placeholder&lt;/p&gt;&lt;/html&gt;"
+        width="320"
+        height="120"
+      ></iframe>
+
+      <!-- DEFECT role-img-alt: role=img without an accessible name. -->
+      <div role="img" style="width: 120px; height: 60px; background: #6b4423"></div>
+
+      <h2>Opening hours</h2>
+
+      <!-- DEFECT td-headers-attr: headers points to an id that does not exist in the table. -->
+      <table>
+        <tr>
+          <th id="day">Day</th>
+          <th id="hours">Hours</th>
+        </tr>
+        <tr>
+          <td headers="day">Monday to Saturday</td>
+          <td headers="opening">7:00 to 18:00</td>
+        </tr>
+      </table>
+
+      <!-- DEFECT definition-list: dl with an invalid direct child. -->
+      <dl>
+        <p>Roastery facts</p>
+        <dt>Founded</dt>
+        <dd>2019</dd>
+      </dl>
+
+      <!-- DEFECT input-image-alt: image button without alt. -->
+      <form action="#">
+        <input type="image" src="img/beans.svg" width="64" height="36" />
+      </form>
+    </main>
+
+    <footer>
+      <p>Harbor Coffee is fictional. Fixture maintained by the Allytic project.</p>
+    </footer>
+  </body>
+</html>
